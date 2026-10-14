@@ -26,6 +26,7 @@ async function launch(config, env = {}) {
 {
   const { app, window } = await launch();
   await window.waitForSelector("text=Willkommen bei Flowplan");
+  assert.equal(await window.inputValue("#server"), "https://app.flowplan.org");
   await window.fill("#server", "http://127.0.0.1:1");
   await window.click("#submit");
   await window.waitForSelector("#error:not(:empty)");
@@ -47,9 +48,12 @@ async function launch(config, env = {}) {
   await app.close();
   console.log("✔ Offline-Seite");
 }
-// A preset address (managed installation) skips the setup page.
+// A preset address (managed installation) is suggested, the first start still asks.
 {
   const { app, window } = await launch(undefined, { FLOWPLAN_SERVER: server });
+  await window.waitForSelector("text=Willkommen bei Flowplan");
+  assert.equal(await window.inputValue("#server"), new URL(server).origin);
+  await window.click("#submit");
   await window.waitForURL((url) => url.href.startsWith(server), { timeout: 30000 });
   await app.close();
   console.log("✔ Vorgegebene Adresse");

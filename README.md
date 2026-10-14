@@ -24,7 +24,7 @@ Flowplan itself – every new feature – arrives with the server and needs no a
 | Windows 10 or newer | `Flowplan-<version>-windows-setup.exe`, or the `.zip` without installing | x64 and ARM in one installer |
 | Linux | `Flowplan-<version>-linux-<arch>.AppImage`, or the `.tar.gz` | x64 and ARM |
 
-On first start the app asks for the address of your Flowplan instance (HTTPS; `http://localhost` for local tests). Change it via the menu **Server wechseln …**. Managed installations preset it with `--server=<URL>` or the environment variable `FLOWPLAN_SERVER`.
+On first start the app always asks for the address of the Flowplan instance, suggesting `https://app.flowplan.org` (HTTPS; `http://localhost` for local tests). Change it via the menu **Server wechseln …**. Managed installations suggest their own address with `--server=<URL>` or the environment variable `FLOWPLAN_SERVER`; the first start still shows it for confirmation.
 
 While the apps are not signed, macOS asks on first opening (right-click → **Open**), Windows shows SmartScreen (**More info → Run anyway**), and AppImages need to be made executable (`chmod +x Flowplan-*.AppImage`).
 
@@ -87,7 +87,7 @@ FLOWPLAN_APP="$PWD/dist/mac-arm64/Flowplan.app/Contents/MacOS/Flowplan" npm run 
 FLOWPLAN_APP="$PWD/dist/mac-arm64/Flowplan.app/Contents/MacOS/Flowplan" npm run test:update
 ```
 
-`test:smoke` checks setup, loading, the offline page and a preset address; `test:update` offers the app a newer version from a local source and checks that it is found and offered.
+`test:smoke` checks setup, loading, the offline page and a suggested address; `test:update` offers the app a newer version from a local source and checks that it is found and offered.
 
 Why Electron and not Tauri: Electron ships the same Chromium everywhere, the browser Flowplan is developed and tested in (service worker, IndexedDB, editor). Tauri uses the system's web views (WebKit on macOS, WebView2 on Windows) and needs a Rust toolchain; the app would be much smaller (~10 MB instead of ~110 MB).
 

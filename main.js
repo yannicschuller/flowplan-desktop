@@ -51,8 +51,10 @@ async function checkServer(origin) {
 }
 
 let win = null;
-// Managed installations can preset the instance: --server=<url> or the
-// environment variable FLOWPLAN_SERVER. A choice in the app wins later.
+// Suggested on the setup page: the public instance, or for managed
+// installations --server=<url> or the environment variable FLOWPLAN_SERVER.
+// The first start always asks; only the confirmed address is remembered.
+const DEFAULT_SERVER = "https://app.flowplan.org";
 function presetServer() {
   const arg = process.argv.find((a) => a.startsWith("--server="));
   const value = arg ? arg.slice("--server=".length) : process.env.FLOWPLAN_SERVER;
@@ -63,7 +65,8 @@ function presetServer() {
     return undefined;
   }
 }
-const server = () => readConfig().server || presetServer();
+const server = () => readConfig().server;
+const suggestedServer = () => server() || presetServer() || DEFAULT_SERVER;
 const page = (name) => path.join(__dirname, "pages", name);
 function sameOrigin(url) {
   try {
@@ -75,7 +78,7 @@ function sameOrigin(url) {
 function openServer() {
   const origin = server();
   if (!win) return;
-  if (!origin) return win.loadFile(page("setup.html"));
+  if (!origin) return win.loadFile(page("setup.html"), { query: { server: suggestedServer() } });
   win.loadURL(origin).catch(() => {});
 }
 function createWindow() {
@@ -156,7 +159,7 @@ function trackSignIn() {
 }
 async function chooseServer() {
   if (!win) return;
-  win.loadFile(page("setup.html"), { query: { server: server() || "" } });
+  win.loadFile(page("setup.html"), { query: { server: suggestedServer() } });
 }
 function buildMenu() {
   const nav = (fn) => () => win && fn(win.webContents);
