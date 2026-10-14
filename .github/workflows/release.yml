@@ -7,6 +7,7 @@
 # failed build, "rebuild" with the version (e.g. 1.0.1) builds it again and
 # fills its draft release, without raising the version.
 name: Release
+run-name: "Release · ${{ inputs.rebuild != '' && format('rebuild {0}', inputs.rebuild) || inputs.bump }}"
 
 on:
   workflow_dispatch:
@@ -44,9 +45,22 @@ jobs:
       - id: version
         env:
           REBUILD: ${{ inputs.rebuild }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ -n "$REBUILD" ]; then
-            echo "version=${REBUILD#v}" >> "$GITHUB_OUTPUT"
+            # "1.0.1", "v1.0.1", " V1.0.1 " – all mean the same version.
+            version="$(printf '%s' "$REBUILD" | tr -d '[:space:]' | sed -E 's/^[vV]//')"
+            if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "::error::rebuild needs a version like 1.0.1 (got '$REBUILD')"
+              exit 1
+            fi
+            if ! git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null; then
+              echo "::error::There is no tag v$version to build again."
+              exit 1
+            fi
+            # The draft of a failed release, or a new one if it is missing.
+            gh release view "v$version" > /dev/null 2>&1 || gh release create "v$version" --draft --generate-notes --title "Flowplan Desktop $version"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
           else
             npm version "${{ inputs.bump }}" --no-git-tag-version
             echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
@@ -86,9 +100,14 @@ jobs:
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
+      - name: Version
+        shell: bash
+        run: |
+          echo "Building v$VERSION (tag refs/tags/v$VERSION)"
+          [ -n "$VERSION" ] || { echo "::error::The version job gave no version."; exit 1; }
       - uses: actions/checkout@v7
         with:
-          ref: v${{ needs.version.outputs.version }}
+          ref: refs/tags/v${{ needs.version.outputs.version }}
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
