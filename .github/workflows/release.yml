@@ -18,7 +18,7 @@ on:
         options: [patch, minor, major]
         default: patch
       rebuild:
-        description: "Build an existing version again (e.g. 1.0.1 after a failed build) instead of raising the version"
+        description: "Only to build an existing version again: its number, e.g. 1.0.1 (leave empty for a new release)"
         type: string
         default: ""
 
