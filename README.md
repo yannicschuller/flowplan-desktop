@@ -62,6 +62,8 @@ With `CSC_LINK` set, the release workflow marks the macOS app as signed (`build/
 3. builds macOS, Windows and Linux on GitHub's runners and attaches the apps and the update files,
 4. publishes the release once every system is attached.
 
+If a build fails, run the workflow again with **rebuild** set to the version (e.g. `1.0.1`): it builds that version again and completes its draft release instead of raising the version.
+
 Installed apps find the new version within six hours; the download page offers it right away. CI (`ci.yml`) checks every push with a syntax check and a Linux test build. Jobs of this repository run on the self-hosted runner; Dependabot and pull requests from forks use GitHub's runners.
 
 ## Development

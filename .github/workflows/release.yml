@@ -3,7 +3,9 @@
 # macOS (universal), Windows (x64 and ARM) and Linux (x64 and ARM). The release
 # stays a draft until every system is attached – with the files the updater
 # reads (latest*.yml, blockmaps) – and is published then. Installed apps find
-# it within six hours; flowplan.org/download offers it right away.
+# it within six hours; flowplan.org/download offers it right away. After a
+# failed build, "rebuild" with the version (e.g. 1.0.1) builds it again and
+# fills its draft release, without raising the version.
 name: Release
 
 on:
@@ -14,6 +16,10 @@ on:
         type: choice
         options: [patch, minor, major]
         default: patch
+      rebuild:
+        description: "Build an existing version again (e.g. 1.0.1 after a failed build) instead of raising the version"
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -36,10 +42,17 @@ jobs:
         with:
           node-version: 22
       - id: version
+        env:
+          REBUILD: ${{ inputs.rebuild }}
         run: |
-          npm version "${{ inputs.bump }}" --no-git-tag-version
-          echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
+          if [ -n "$REBUILD" ]; then
+            echo "version=${REBUILD#v}" >> "$GITHUB_OUTPUT"
+          else
+            npm version "${{ inputs.bump }}" --no-git-tag-version
+            echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
+          fi
       - name: Commit, tag and draft release
+        if: inputs.rebuild == ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -93,16 +106,24 @@ jobs:
       - name: Build
         shell: bash
         env:
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
-          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Under other names: electron-builder must only see signing
+          # variables that are actually set – an empty CSC_LINK counts as a
+          # file path and fails the build.
+          SECRET_CSC_LINK: ${{ secrets.CSC_LINK }}
+          SECRET_CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          SECRET_WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          SECRET_WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          SECRET_APPLE_ID: ${{ secrets.APPLE_ID }}
+          SECRET_APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          SECRET_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for name in CSC_LINK CSC_KEY_PASSWORD WIN_CSC_LINK WIN_CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            secret="SECRET_$name"
+            if [ -n "${!secret}" ]; then export "$name=${!secret}"; fi
+          done
           # Without a certificate: build unsigned instead of searching for one.
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.CSC_LINK != '' && 'true' || 'false' }}
-        run: npx electron-builder ${{ matrix.target }} --publish never
+          if [ -z "${CSC_LINK:-}" ] && [ -z "${WIN_CSC_LINK:-}" ]; then export CSC_IDENTITY_AUTO_DISCOVERY=false; fi
+          npx electron-builder ${{ matrix.target }} --publish never
       - name: Attach to the release
         shell: bash
         env:
