@@ -1,0 +1,130 @@
+{
+  "name": "flowplan-desktop",
+  "productName": "Flowplan",
+  "version": "1.0.0",
+  "description": "Flowplan als Desktop-App für macOS, Windows und Linux",
+  "main": "main.js",
+  "private": true,
+  "author": "Flowplan",
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "start": "electron .",
+    "check": "node --check main.js && node --check preload.js && node --check updates.js && node --check test/update.mjs",
+    "test:smoke": "node test/smoke.mjs",
+    "dist": "electron-builder --publish never",
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:win": "electron-builder --win --publish never",
+    "dist:linux": "electron-builder --linux --publish never",
+    "dist:dir": "electron-builder --dir --publish never",
+    "test:update": "node test/update.mjs"
+  },
+  "devDependencies": {
+    "electron": "^38.2.0",
+    "electron-builder": "^26.0.12",
+    "playwright": "^1.63.0"
+  },
+  "build": {
+    "appId": "app.flowplan.desktop",
+    "productName": "Flowplan",
+    "copyright": "Flowplan",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "updates.js",
+      "pages/**",
+      "build/icon.png",
+      "build/update.json",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "hardenedRuntime": true,
+      "artifactName": "Flowplan-${version}-mac.${ext}"
+    },
+    "dmg": {
+      "title": "Flowplan"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "Flowplan-${version}-windows-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Flowplan",
+      "artifactName": "Flowplan-${version}-windows-setup.${ext}"
+    },
+    "linux": {
+      "category": "Office",
+      "executableName": "flowplan",
+      "synopsis": "Dokumente, Datenbanken, Whiteboards und ein Journal",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "tar.gz",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "Flowplan-${version}-linux-${arch}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "yannicschuller",
+        "repo": "flowplan-desktop",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "homepage": "https://flowplan.org/download",
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yannicschuller/flowplan-desktop.git"
+  }
+}
