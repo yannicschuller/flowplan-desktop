@@ -26,7 +26,19 @@ Flowplan itself – every new feature – arrives with the server and needs no a
 
 On first start the app always asks for the address of the Flowplan instance, suggesting `https://app.flowplan.org` (HTTPS; `http://localhost` for local tests). Change it via the menu **Server wechseln …**. Managed installations suggest their own address with `--server=<URL>` or the environment variable `FLOWPLAN_SERVER`; the first start still shows it for confirmation.
 
+The app only accepts a real Flowplan instance: its health check (`/api/health`) must answer as Flowplan, and the address must not redirect to another site.
+
 While the apps are not signed, macOS asks on first opening (right-click → **Open**), Windows shows SmartScreen (**More info → Run anyway**), and AppImages need to be made executable (`chmod +x Flowplan-*.AppImage`).
+
+## Signing in with passkeys and SSO
+
+Passkeys (iCloud Keychain, Windows Hello, password managers) and identity providers that ask for one only work in a real browser. In the app, **Mit Passkey anmelden** and **Mit SSO anmelden** therefore open the sign-in in the default browser:
+
+1. The app creates a random secret and opens the instance with its hash (`/api/auth/desktop`).
+2. You sign in in the browser as usual and confirm **In der Desktop-App anmelden**.
+3. The browser opens `flowplan://sign-in` with a one-time code; the app redeems it with its secret and is signed in.
+
+The code is valid for one minute, works once and only together with the secret that never leaves the app – a link caught elsewhere is useless, and the app ignores codes for sign-ins it did not start or for another instance. E-mail and password sign in directly in the app. This needs a Flowplan server newer than 0.3.2.
 
 ## Updates
 
@@ -87,7 +99,7 @@ FLOWPLAN_APP="$PWD/dist/mac-arm64/Flowplan.app/Contents/MacOS/Flowplan" npm run 
 FLOWPLAN_APP="$PWD/dist/mac-arm64/Flowplan.app/Contents/MacOS/Flowplan" npm run test:update
 ```
 
-`test:smoke` checks setup, loading, the offline page and a suggested address; `test:update` offers the app a newer version from a local source and checks that it is found and offered.
+`test:smoke` checks setup, loading, the offline page, a suggested address, that other servers are refused and the sign-in through the browser (the latter with the development sign-in of a local instance); `test:update` offers the app a newer version from a local source and checks that it is found and offered.
 
 Why Electron and not Tauri: Electron ships the same Chromium everywhere, the browser Flowplan is developed and tested in (service worker, IndexedDB, editor). Tauri uses the system's web views (WebKit on macOS, WebView2 on Windows) and needs a Rust toolchain; the app would be much smaller (~10 MB instead of ~110 MB).
 

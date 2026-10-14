@@ -14,6 +14,7 @@ const {
 } = require("electron");
 const path = require("node:path");
 const { setupUpdates, checkForUpdatesNow } = require("./updates");
+const { setupBrowserSignIn } = require("./sign-in");
 const fs = require("node:fs");
 
 const isMac = process.platform === "darwin";
@@ -42,11 +43,23 @@ function normalizeServer(input) {
     throw new Error("Nur HTTPS-Adressen sind erlaubt (HTTP nur für localhost).");
   return url.origin;
 }
+// Only a Flowplan instance is accepted: its health check names the service
+// (older versions are recognised by the fields of their answer), and the
+// address must not redirect to another site.
 async function checkServer(origin) {
-  const response = await fetch(`${origin}/api/health`, {
-    signal: AbortSignal.timeout(8000),
-  });
-  if (!response.ok) throw new Error(`Der Server antwortet mit ${response.status}.`);
+  let response;
+  try {
+    response = await fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(8000) });
+  } catch {
+    throw new Error("Die Adresse ist nicht erreichbar.");
+  }
+  if (new URL(response.url).origin !== origin)
+    throw new Error(`Die Adresse leitet auf ${new URL(response.url).origin} weiter. Gib bitte diese Adresse ein.`);
+  const data = await response.json().catch(() => null);
+  const flowplan =
+    data?.service === "flowplan" ||
+    (data && typeof data.checks === "object" && "database" in data.checks && "searchBacklog" in data);
+  if (!flowplan) throw new Error("Dort läuft kein Flowplan.");
   return true;
 }
 
@@ -66,6 +79,7 @@ function presetServer() {
   }
 }
 const server = () => readConfig().server;
+const signIn = setupBrowserSignIn({ server, getWindow: () => win });
 const suggestedServer = () => server() || presetServer() || DEFAULT_SERVER;
 const page = (name) => path.join(__dirname, "pages", name);
 function sameOrigin(url) {
@@ -117,12 +131,15 @@ function createWindow() {
   // Links to other sites open in the default browser; sign-in pages of the
   // identity provider stay in the window.
   win.webContents.setWindowOpenHandler(({ url }) => {
+    if (signIn.intercept(url)) return { action: "deny" };
     if (!sameOrigin(url) && /^(https?:|mailto:)/i.test(url))
       void shell.openExternal(url);
     else if (sameOrigin(url)) win.loadURL(url);
     return { action: "deny" };
   });
   win.webContents.on("will-navigate", (event, url) => {
+    // Passkeys and SSO: sign in through the system browser (sign-in.js).
+    if (signIn.intercept(url)) return event.preventDefault();
     if (url.startsWith("file:") || sameOrigin(url)) return;
     // The sign-in flow leaves the instance and comes back to /api/auth.
     const current = win.webContents.getURL();
@@ -278,11 +295,14 @@ ipcMain.handle("flowplan:change-server", () => chooseServer());
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
-  app.on("second-instance", () => {
+  app.on("second-instance", (_event, argv) => {
+    signIn.secondInstance(argv);
     if (!win) return;
     if (win.isMinimized()) win.restore();
     win.focus();
   });
+  // The instance shows its desktop sign-in (passkeys, SSO in the browser).
+  app.userAgentFallback = `${app.userAgentFallback} FlowplanDesktop/${app.getVersion()}`;
   app.whenReady().then(() => {
     session.defaultSession.setSpellCheckerLanguages?.(["de-DE", "en-US"]);
     // Only notifications and clipboard are granted to the instance.
@@ -295,6 +315,7 @@ else {
     trackSignIn();
     buildMenu();
     createWindow();
+    signIn.ready();
     setupUpdates();
     app.on("activate", () => {
       if (!BrowserWindow.getAllWindows().length) createWindow();

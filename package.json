@@ -9,7 +9,7 @@
   "license": "AGPL-3.0-only",
   "scripts": {
     "start": "electron .",
-    "check": "node --check main.js && node --check preload.js && node --check updates.js && node --check test/update.mjs",
+    "check": "node --check main.js && node --check preload.js && node --check updates.js && node --check sign-in.js && node --check test/update.mjs",
     "test:smoke": "node test/smoke.mjs",
     "dist": "electron-builder --publish never",
     "dist:mac": "electron-builder --mac --publish never",
@@ -35,10 +35,19 @@
       "main.js",
       "preload.js",
       "updates.js",
+      "sign-in.js",
       "pages/**",
       "build/icon.png",
       "build/update.json",
       "package.json"
+    ],
+    "protocols": [
+      {
+        "name": "Flowplan",
+        "schemes": [
+          "flowplan"
+        ]
+      }
     ],
     "mac": {
       "category": "public.app-category.productivity",

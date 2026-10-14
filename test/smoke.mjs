@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
+import { createServer } from "node:http";
+import { request as playwrightRequest } from "playwright";
 // FLOWPLAN_APP: path of a packaged app executable instead of the dev build.
 const packaged = process.env.FLOWPLAN_APP;
 const executablePath = packaged || createRequire(import.meta.url)("electron");
@@ -57,4 +59,50 @@ async function launch(config, env = {}) {
   await window.waitForURL((url) => url.href.startsWith(server), { timeout: 30000 });
   await app.close();
   console.log("✔ Vorgegebene Adresse");
+}
+// A server that is not Flowplan is refused.
+{
+  const other = createServer((_req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ status: "ok" }));
+  });
+  await new Promise((done) => other.listen(0, "127.0.0.1", done));
+  const { app, window } = await launch();
+  await window.waitForSelector("text=Willkommen bei Flowplan");
+  await window.fill("#server", `http://127.0.0.1:${other.address().port}`);
+  await window.click("#submit");
+  await window.waitForSelector("#error:not(:empty)");
+  assert.match(await window.textContent("#error"), /Dort läuft kein Flowplan/);
+  await app.close();
+  other.close();
+  console.log("✔ Fremder Server abgelehnt");
+}
+// Passkeys and SSO: signing in through the browser hands a one-time code
+// back to the app (needs the development sign-in of the test instance).
+{
+  const { app, window } = await launch({ server });
+  await window.waitForLoadState("domcontentloaded");
+  await app.evaluate(({ shell }) => {
+    globalThis.opened = [];
+    shell.openExternal = async (url) => void globalThis.opened.push(url);
+  });
+  const passkey = window.getByRole("link", { name: "Mit Passkey anmelden" });
+  await passkey.waitFor({ timeout: 60000 });
+  await passkey.evaluate((a) => a.click());
+  await window.waitForTimeout(500);
+  const [opened] = await app.evaluate(() => globalThis.opened);
+  assert.ok(opened?.startsWith(`${server}/api/auth/desktop?challenge=`), opened);
+  // The browser: sign in, confirm, follow the link back.
+  const browser = await playwrightRequest.newContext({ baseURL: server, extraHTTPHeaders: { origin: server, "accept-language": "de" } });
+  assert.ok((await browser.post("/api/auth/demo")).ok());
+  const challenge = new URL(opened).searchParams.get("challenge");
+  const confirm = await (await browser.get(opened)).text();
+  assert.match(confirm, /In der Desktop-App anmelden/);
+  const page = await (await browser.post("/api/auth/desktop", { form: { challenge } })).text();
+  const link = page.match(/href="(flowplan:[^"]+)"/)[1].replaceAll("&amp;", "&");
+  await browser.dispose();
+  await app.evaluate(({ app }, link) => app.emit("open-url", { preventDefault() {} }, link), link);
+  await window.waitForFunction(async () => (await fetch("/api/bootstrap")).ok, undefined, { timeout: 30000 });
+  await app.close();
+  console.log("✔ Anmeldung im Browser");
 }
