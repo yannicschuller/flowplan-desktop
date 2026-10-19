@@ -28,7 +28,7 @@ On first start the app always asks for the address of the Flowplan instance, sug
 
 The app only accepts a real Flowplan instance: its health check (`/api/health`) must answer as Flowplan, and the address must not redirect to another site.
 
-While the apps are not signed, macOS asks on first opening (right-click → **Open**), Windows shows SmartScreen (**More info → Run anyway**), and AppImages need to be made executable (`chmod +x Flowplan-*.AppImage`).
+While the apps are not signed and notarized, macOS blocks the first launch: from macOS 15 allow it under **System Settings → Privacy & Security → Open Anyway** (up to macOS 14, right-click → **Open** is enough); if macOS says the app is "damaged", `xattr -dr com.apple.quarantine /Applications/Flowplan.app` removes the quarantine flag. Signing and notarization (below) make this go away. Windows shows SmartScreen (**More info → Run anyway**), and AppImages need to be made executable (`chmod +x Flowplan-*.AppImage`).
 
 ## Signing in with passkeys and SSO
 
@@ -64,6 +64,18 @@ Releases are unsigned until the repository has these secrets (Settings → Secre
 | `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD` | Windows code signing certificate |
 
 With `CSC_LINK` set, the release workflow marks the macOS app as signed (`build/update.json`) and it updates itself like on Windows.
+
+### macOS: no more quarantine warning
+
+Browsers mark every download with `com.apple.quarantine`; Gatekeeper then opens the app without asking only if it is signed with a **Developer ID** and **notarized** by Apple. electron-builder does both (and staples the ticket) as soon as the secrets above are set:
+
+1. Join the [Apple Developer Program](https://developer.apple.com/programs/) (99 USD a year, as a person or an organisation).
+2. On a Mac: Xcode → Settings → Accounts → Manage Certificates → **+** → **Developer ID Application** (or create it under Certificates on developer.apple.com).
+3. In Keychain Access, export that certificate together with its private key as `.p12` with a password. `base64 -i developer-id.p12 | pbcopy` → secret `CSC_LINK`; the password → `CSC_KEY_PASSWORD`.
+4. On [account.apple.com](https://account.apple.com) → Sign-In and Security → **App-Specific Passwords**, create one → `APPLE_APP_SPECIFIC_PASSWORD`; your Apple ID e-mail → `APPLE_ID`; the Team ID (Membership details on developer.apple.com) → `APPLE_TEAM_ID`.
+5. Run **Actions → Release**. Check a download with `spctl -a -vv /Applications/Flowplan.app` – it should say `accepted, source=Notarized Developer ID`.
+
+Windows has the same with SmartScreen: a code signing certificate (`WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD`) removes the warning once the certificate has gathered reputation with Microsoft.
 
 ## Releasing
 
