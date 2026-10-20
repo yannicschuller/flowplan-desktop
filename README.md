@@ -10,7 +10,7 @@
 
 </div>
 
-A slim [Electron](https://www.electronjs.org/) window around a Flowplan instance – like the desktop apps of Notion or Slack. All data stays on the server; the app remembers the address and the window, has native menus, opens links to other sites in the default browser, shows its own page without a connection and updates itself. Offline use, notifications and keyboard shortcuts of the web app work unchanged.
+A slim [Electron](https://www.electronjs.org/) window around a Flowplan instance – like the desktop apps of Notion or Slack. All data stays on the server; the app remembers the address and the window, has native menus, opens links to other sites in the default browser, shows its own page without a connection and updates itself. Offline use, notifications and keyboard shortcuts of the web app work unchanged: with **Settings → Data → Offline use** switched on in the app, it opens the stored copy from the instance's service worker without a connection, and its own offline page only appears when there is no copy ([`fallback.js`](fallback.js)).
 
 Flowplan itself – every new feature – arrives with the server and needs no app update. This app only changes when the window around it does.
 
@@ -98,6 +98,7 @@ Node.js 22 or newer.
 npm ci
 npm start                  # the app against any instance
 npm run check              # syntax check
+npm test                   # offline use (Linux without a display: xvfb-run -a npm test)
 npm run dist:mac           # DMG and ZIP (universal), only on macOS
 npm run dist:win           # installer and ZIP (x64 and ARM)
 npm run dist:linux         # AppImage and tar.gz (x64 and ARM)
@@ -109,9 +110,10 @@ The results are in `dist/`. Tests against a packaged app:
 npx electron-builder --mac zip --arm64 --publish never
 FLOWPLAN_APP="$PWD/dist/mac-arm64/Flowplan.app/Contents/MacOS/Flowplan" npm run test:smoke -- https://your-instance.example
 FLOWPLAN_APP="$PWD/dist/mac-arm64/Flowplan.app/Contents/MacOS/Flowplan" npm run test:update
+FLOWPLAN_APP="$PWD/dist/mac-arm64/Flowplan.app/Contents/MacOS/Flowplan" npm run test:offline
 ```
 
-`test:smoke` checks setup, loading, the offline page, a suggested address, that other servers are refused and the sign-in through the browser (the latter with the development sign-in of a local instance); `test:update` offers the app a newer version from a local source and checks that it is found and offered.
+`test:smoke` checks setup, loading, the offline page, a suggested address, that other servers are refused and the sign-in through the browser (the latter with the development sign-in of a local instance); `test:update` offers the app a newer version from a local source and checks that it is found and offered; `test:offline` (also `npm test`, no instance needed) checks that the window offers what offline use needs and that without a connection the copy stored by the service worker opens – also after a failed page of the instance – and the offline page only without a copy.
 
 Why Electron and not Tauri: Electron ships the same Chromium everywhere, the browser Flowplan is developed and tested in (service worker, IndexedDB, editor). Tauri uses the system's web views (WebKit on macOS, WebView2 on Windows) and needs a Rust toolchain; the app would be much smaller (~10 MB instead of ~110 MB).
 

@@ -9,7 +9,9 @@
   "license": "AGPL-3.0-only",
   "scripts": {
     "start": "electron .",
-    "check": "node --check main.js && node --check preload.js && node --check updates.js && node --check sign-in.js && node --check test/update.mjs",
+    "check": "node --check main.js && node --check preload.js && node --check updates.js && node --check sign-in.js && node --check fallback.js && node --check test/update.mjs && node --check test/offline.mjs",
+    "test": "node test/offline.mjs",
+    "test:offline": "node test/offline.mjs",
     "test:smoke": "node test/smoke.mjs",
     "dist": "electron-builder --publish never",
     "dist:mac": "electron-builder --mac --publish never",
@@ -36,6 +38,7 @@
       "preload.js",
       "updates.js",
       "sign-in.js",
+      "fallback.js",
       "pages/**",
       "build/icon.png",
       "build/update.json",

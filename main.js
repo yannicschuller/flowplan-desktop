@@ -1,6 +1,7 @@
 // Flowplan for macOS, Windows and Linux: a window around a Flowplan instance.
 // Everything runs on the server; the app remembers the address, the window
-// and offers native menus, links in the browser, an offline page and updates
+// and offers native menus, links in the browser, an offline page (when the
+// service worker of offline use has no copy, fallback.js) and updates
 // of itself (updates.js).
 const {
   app,
@@ -15,6 +16,7 @@ const {
 const path = require("node:path");
 const { setupUpdates, checkForUpdatesNow } = require("./updates");
 const { setupBrowserSignIn } = require("./sign-in");
+const { fallbackFor } = require("./fallback");
 const fs = require("node:fs");
 
 const isMac = process.platform === "darwin";
@@ -150,6 +152,8 @@ function createWindow() {
   });
   win.webContents.on("did-fail-load", (_e, code, description, url, isMain) => {
     if (!isMain || code === -3) return; // -3: navigation replaced
+    // Offline copies open from the service worker under "/" (fallback.js).
+    if (fallbackFor(url, server()) === "start") return void win.loadURL(server()).catch(() => {});
     win.loadFile(page("offline.html"), {
       query: { server: server() || "", error: description || String(code) },
     });
