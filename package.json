@@ -21,8 +21,8 @@
     "test:update": "node test/update.mjs"
   },
   "devDependencies": {
-    "electron": "^38.2.0",
-    "electron-builder": "^26.0.12",
+    "electron": "^44.9.3",
+    "electron-builder": "^26.15.3",
     "playwright": "^1.63.0"
   },
   "build": {
