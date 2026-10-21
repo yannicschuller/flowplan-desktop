@@ -31,8 +31,9 @@ concurrency:
 
 jobs:
   version:
-    # Own runner (label self-hosted) for this repository's own work.
-    runs-on: ${{ (github.actor == 'dependabot[bot]' || github.triggering_actor == 'dependabot[bot]' || (github.event_name == 'pull_request' && (github.event.pull_request.user.login == 'dependabot[bot]' || github.event.pull_request.head.repo.full_name != github.repository))) && 'ubuntu-latest' || 'self-hosted' }}
+    # Own runner (label self-hosted): only maintainers can dispatch this
+    # workflow, so no fork or Dependabot code ever runs here.
+    runs-on: self-hosted
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -154,7 +155,7 @@ jobs:
 
   publish:
     needs: [version, build]
-    runs-on: ${{ (github.actor == 'dependabot[bot]' || github.triggering_actor == 'dependabot[bot]' || (github.event_name == 'pull_request' && (github.event.pull_request.user.login == 'dependabot[bot]' || github.event.pull_request.head.repo.full_name != github.repository))) && 'ubuntu-latest' || 'self-hosted' }}
+    runs-on: self-hosted
     steps:
       - name: Publish the release
         env:
