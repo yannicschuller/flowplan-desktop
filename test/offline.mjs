@@ -88,6 +88,8 @@ writeFileSync(join(dir, "config.json"), JSON.stringify({ server: origin }));
     caches: "caches" in window,
   }));
   assert.deepEqual(support, { secure: true, serviceWorker: true, caches: true });
+  // The instance's pages have no bridge to the app (preload.js).
+  assert.equal(await window.evaluate(() => typeof window.flowplanDesktop), "undefined");
   await window.evaluate(async () => {
     await navigator.serviceWorker.register("/sw.js", { scope: "/" });
     await navigator.serviceWorker.ready;
@@ -136,8 +138,12 @@ await stop();
     cwd: new URL("..", import.meta.url).pathname,
   });
   const window = await app.firstWindow();
-  await window.waitForSelector("text=Keine Verbindung zu Flowplan", { timeout: 30000 });
+  await window.waitForSelector("#retry", { timeout: 30000 });
+  assert.match(await window.textContent("h1"), /Keine Verbindung zu Flowplan|No connection to Flowplan|Pas de connexion à Flowplan/);
   assert.equal(offlinePage(window.url()), true);
+  // The app's own page has the bridge, and in the system language.
+  assert.equal(await window.evaluate(() => typeof window.flowplanDesktop.retry), "function");
+  assert.match(await window.evaluate(() => document.documentElement.lang), /^(de|en|fr)$/);
   await app.close();
   console.log("✔ Ohne Offline-Kopie die Offline-Seite");
 }

@@ -5,12 +5,17 @@
 // install on the next start, or right away from a dialog. macOS can only
 // replace a signed app; unsigned builds point to the download page instead
 // (build/update.json, written by the release workflow). FLOWPLAN_UPDATE_URL
-// points to another update source.
-const { app, dialog, shell, BrowserWindow } = require("electron");
+// points to another update source – https only (guards.js), because whoever
+// serves updates serves the whole app; the dialogs name the source.
 const path = require("node:path");
 const fs = require("node:fs");
+const { updateFeedUrl } = require("./guards");
+const { t } = require("./strings");
 
+// Electron only when needed: test/security.mjs loads this file with Node alone.
+const electron = () => require("electron");
 const DOWNLOAD_PAGE = "https://flowplan.org/download";
+const RELEASES = "github.com/yannicschuller/flowplan-desktop";
 const SIX_HOURS = 6 * 60 * 60 * 1000;
 
 function buildInfo() {
@@ -26,19 +31,31 @@ function canInstall() {
   if (process.platform === "linux") return !!process.env.APPIMAGE;
   return true;
 }
+// Where updates come from: the release feed, or an https mirror named in
+// FLOWPLAN_UPDATE_URL. Anything else in that variable is ignored and said so.
+function feed(env = process.env) {
+  const wanted = env.FLOWPLAN_UPDATE_URL;
+  const url = updateFeedUrl(wanted);
+  if (url) return { url, label: url, ignored: null };
+  return { url: null, label: t("updates.sourceGithub", RELEASES), ignored: wanted || null };
+}
+const sourceLine = () => t("updates.source", feed().label);
 
 let updater = null;
 let manual = false;
 let offered = "";
-const window = () => BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+const window = () => electron().BrowserWindow.getFocusedWindow() || electron().BrowserWindow.getAllWindows()[0];
 
 function setupUpdates() {
+  const { app, dialog, shell } = electron();
   // Only packaged apps update (not `npm start`).
   if (!app.isPackaged) return;
   ({ autoUpdater: updater } = require("electron-updater"));
   // Another source for updates (a mirror inside a company, or tests):
   // a folder with latest*.yml and the files, e.g. https://example.com/flowplan/.
-  if (process.env.FLOWPLAN_UPDATE_URL) updater.setFeedURL({ provider: "generic", url: process.env.FLOWPLAN_UPDATE_URL });
+  const source = feed();
+  if (source.ignored) console.warn(t("updates.sourceIgnored", source.ignored));
+  if (source.url) updater.setFeedURL({ provider: "generic", url: source.url });
   updater.autoDownload = canInstall();
   updater.autoInstallOnAppQuit = canInstall();
   updater.on("update-available", (info) => {
@@ -48,29 +65,33 @@ function setupUpdates() {
     void dialog
       .showMessageBox(window(), {
         type: "info",
-        buttons: ["Herunterladen", "Später"],
+        buttons: [t("updates.download"), t("updates.later")],
         defaultId: 0,
         cancelId: 1,
-        message: `Flowplan ${info.version} ist verfügbar`,
-        detail: `Du nutzt Version ${app.getVersion()}. Lade die neue Version herunter und ersetze die App damit.`,
+        message: t("updates.available", info.version),
+        detail: `${t("updates.availableDetail", app.getVersion())}\n\n${sourceLine()}`,
       })
       .then(({ response }) => response === 0 && shell.openExternal(DOWNLOAD_PAGE));
   });
   updater.on("update-not-available", () => {
     if (!manual) return;
     manual = false;
-    void dialog.showMessageBox(window(), { type: "info", message: "Flowplan ist auf dem neuesten Stand", detail: `Version ${app.getVersion()}` });
+    void dialog.showMessageBox(window(), {
+      type: "info",
+      message: t("updates.upToDate"),
+      detail: `${t("updates.version", app.getVersion())}\n\n${sourceLine()}`,
+    });
   });
   updater.on("update-downloaded", (info) => {
     manual = false;
     void dialog
       .showMessageBox(window(), {
         type: "info",
-        buttons: ["Jetzt neu starten", "Beim nächsten Start"],
+        buttons: [t("updates.restartNow"), t("updates.onNextStart")],
         defaultId: 0,
         cancelId: 1,
-        message: `Flowplan ${info.version} ist bereit`,
-        detail: "Das Update wird beim nächsten Start installiert – oder jetzt sofort.",
+        message: t("updates.ready", info.version),
+        detail: `${t("updates.readyDetail")}\n\n${sourceLine()}`,
       })
       .then(({ response }) => response === 0 && updater.quitAndInstall());
   });
@@ -80,8 +101,8 @@ function setupUpdates() {
     manual = false;
     void dialog.showMessageBox(window(), {
       type: "warning",
-      message: "Nach Updates suchen hat nicht geklappt",
-      detail: `${error?.message || error}\n\nDie neueste Version gibt es auch unter ${DOWNLOAD_PAGE}.`,
+      message: t("updates.failed"),
+      detail: `${t("updates.failedDetail", error?.message || error, DOWNLOAD_PAGE)}\n\n${sourceLine()}`,
     });
   });
   const check = () => updater.checkForUpdates().catch(() => {});
@@ -91,11 +112,12 @@ function setupUpdates() {
 
 // "Nach Updates suchen …" in the menu: with an answer either way.
 function checkForUpdatesNow() {
+  const { dialog } = electron();
   if (!updater) {
     void dialog.showMessageBox(window(), {
       type: "info",
-      message: "Updates gibt es nur in der installierten App",
-      detail: `Die neueste Version gibt es unter ${DOWNLOAD_PAGE}.`,
+      message: t("updates.onlyInstalled"),
+      detail: t("updates.onlyInstalledDetail", DOWNLOAD_PAGE),
     });
     return;
   }
@@ -104,4 +126,4 @@ function checkForUpdatesNow() {
   void updater.checkForUpdates().catch(() => {});
 }
 
-module.exports = { setupUpdates, checkForUpdatesNow, DOWNLOAD_PAGE };
+module.exports = { setupUpdates, checkForUpdatesNow, feed, DOWNLOAD_PAGE };

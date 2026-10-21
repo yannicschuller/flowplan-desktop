@@ -10,7 +10,7 @@
 
 </div>
 
-A slim [Electron](https://www.electronjs.org/) window around a Flowplan instance – like the desktop apps of Notion or Slack. All data stays on the server; the app remembers the address and the window, has native menus, opens links to other sites in the default browser, shows its own page without a connection and updates itself. Offline use, notifications and keyboard shortcuts of the web app work unchanged: with **Settings → Data → Offline use** switched on in the app, it opens the stored copy from the instance's service worker without a connection, and its own offline page only appears when there is no copy ([`fallback.js`](fallback.js)).
+A slim [Electron](https://www.electronjs.org/) window around a Flowplan instance – like the desktop apps of Notion or Slack. All data stays on the server; the app remembers the address and the window, has native menus (in German, English or French, following the system language), opens links to other sites in the default browser, shows its own page without a connection and updates itself. Voice notes work: the instance may use the microphone (never the camera or the screen). Offline use, notifications and keyboard shortcuts of the web app work unchanged: with **Settings → Data → Offline use** switched on in the app, it opens the stored copy from the instance's service worker without a connection, and its own offline page only appears when there is no copy ([`fallback.js`](fallback.js)).
 
 Flowplan itself – every new feature – arrives with the server and needs no app update. This app only changes when the window around it does.
 
@@ -26,7 +26,9 @@ Flowplan itself – every new feature – arrives with the server and needs no a
 
 On first start the app always asks for the address of the Flowplan instance, suggesting `https://app.flowplan.org` (HTTPS; `http://localhost` for local tests). Change it via the menu **Server wechseln …**. Managed installations suggest their own address with `--server=<URL>` or the environment variable `FLOWPLAN_SERVER`; the first start still shows it for confirmation.
 
-The app only accepts a real Flowplan instance: its health check (`/api/health`) must answer as Flowplan, and the address must not redirect to another site.
+The app only accepts a real Flowplan instance: its health check (`/api/health`) must answer as Flowplan, and the address must not redirect to another site. The setup page tells apart an address that cannot be reached, a proxy or VPN that asks for a sign-in first (HTTP 401/403), a server error, a web page that is something else and a server without Flowplan.
+
+Only the app's own pages (setup, offline, sign-in) can talk to the app: the bridge `window.flowplanDesktop` exists on `file:` pages alone, every call is checked against the page it comes from ([`guards.js`](guards.js)), and only the instance itself, its sign-in and the identity provider it hands over to may open inside the window – any other address goes to the browser, even one that merely contains `/api/auth/`.
 
 While the apps are not signed and notarized, macOS blocks the first launch: from macOS 15 allow it under **System Settings → Privacy & Security → Open Anyway** (up to macOS 14, right-click → **Open** is enough); if macOS says the app is "damaged", `xattr -dr com.apple.quarantine /Applications/Flowplan.app` removes the quarantine flag. Signing and notarization (below) make this go away. Windows shows SmartScreen (**More info → Run anyway**), and AppImages need to be made executable (`chmod +x Flowplan-*.AppImage`).
 
@@ -34,9 +36,17 @@ While the apps are not signed and notarized, macOS blocks the first launch: from
 
 Passkeys (iCloud Keychain, Windows Hello, password managers) and identity providers that ask for one only work in a real browser. In the app, **Mit Passkey anmelden** and **Mit SSO anmelden** therefore open the sign-in in the default browser:
 
-1. The app creates a random secret and opens the instance with its hash (`/api/auth/desktop`).
-2. You sign in in the browser as usual and confirm **In der Desktop-App anmelden**.
+1. The app creates a random secret and opens the instance with its hash (`/api/auth/desktop`). A small window **Weiter im Browser** / **Continue in the browser** waits in the app.
+2. You sign in in the browser as usual and confirm **In der App anmelden** / **Sign in to the app**.
 3. The browser opens `flowplan://sign-in` with a one-time code; the app redeems it with its secret and is signed in.
+
+If the browser cannot hand the link to the app, copy the link behind **Flowplan-App öffnen** / **Open the Flowplan app** on the browser's last page (right-click → Copy link address) and paste it into the waiting window (**Code einfügen** / **Paste code**); the bare code from that link works too. This is needed on **Linux** when `flowplan://` is not registered: the AppImage and the `.tar.gz` do not install a `.desktop` file by themselves. To register the link type once, integrate the AppImage (AppImageLauncher, `appimaged`, or Gear Lever), or install the desktop file by hand – it is inside the AppImage as `flowplan.desktop` with `MimeType=x-scheme-handler/flowplan` – and run
+
+```sh
+xdg-mime default flowplan.desktop x-scheme-handler/flowplan
+```
+
+macOS and Windows register the link type when the app is installed.
 
 The code is valid for one minute, works once and only together with the secret that never leaves the app – a link caught elsewhere is useless, and the app ignores codes for sign-ins it did not start or for another instance. E-mail and password sign in directly in the app. This needs a Flowplan server newer than 0.3.2.
 
@@ -51,7 +61,11 @@ The app checks the latest release of this repository 15 seconds after starting, 
 | macOS, signed | The same. |
 | macOS unsigned, Windows ZIP, Linux `.tar.gz` | A dialog names the new version and opens [flowplan.org/download](https://flowplan.org/download). macOS only lets signed apps replace themselves. |
 
-Updates are found through the files `latest-mac.yml`, `latest.yml` (Windows) and `latest-linux*.yml` that every release carries, next to `.blockmap` files for smaller downloads. Without a connection the check stays quiet and tries again later. `FLOWPLAN_UPDATE_URL` points the app to another source – a folder with the same files, for example a mirror inside a company network.
+Updates are found through the files `latest-mac.yml`, `latest.yml` (Windows) and `latest-linux*.yml` that every release carries, next to `.blockmap` files for smaller downloads. Without a connection the check stays quiet and tries again later. `FLOWPLAN_UPDATE_URL` points the app to another source – a folder with the same files, for example a mirror inside a company network. It must start with `https://` (`http://` only for `localhost`, used by `test:update`); anything else is ignored, and the update dialogs always name the source they used.
+
+### Trust model of unsigned builds
+
+Until the certificates below exist, a downloaded update is verified only by the SHA-512 in the release feed (`latest*.yml`), fetched over HTTPS from GitHub Releases (or the `https://` mirror in `FLOWPLAN_UPDATE_URL`). There is no code signature to check, so whoever can publish a release of this repository – or whoever controls the mirror – can ship any code to every installed app. Treat the release workflow, the self-hosted runner that runs its `version` and `publish` jobs and the repository's write access accordingly. With `WIN_CSC_LINK` set, electron-updater additionally checks the Windows update's signature against the publisher; with `CSC_LINK`, macOS only installs updates signed by the same team.
 
 ## Signing
 
@@ -88,7 +102,7 @@ Windows has the same with SmartScreen: a code signing certificate (`WIN_CSC_LINK
 
 If a build fails, run the workflow again with **rebuild** set to the version (e.g. `1.0.1`): it builds that version again and completes its draft release instead of raising the version.
 
-Installed apps find the new version within six hours; the download page offers it right away. CI (`ci.yml`) checks every push with a syntax check and a Linux test build. Jobs of this repository run on the self-hosted runner; Dependabot and pull requests from forks use GitHub's runners.
+Installed apps find the new version within six hours; the download page offers it right away. CI (`ci.yml`) checks every push with a syntax check, the tests without a network (`test:security`, and `test:offline` under `xvfb-run` where it is installed), that the installed Electron is one of the three majors Electron still patches (anything older than `latest − 2` fails) and a Linux test build. CI jobs run on the self-hosted runner, Dependabot and pull requests from forks on GitHub's runners; the release workflow is dispatched by maintainers only and runs on the self-hosted runner.
 
 ## Development
 
@@ -98,7 +112,8 @@ Node.js 22 or newer.
 npm ci
 npm start                  # the app against any instance
 npm run check              # syntax check
-npm test                   # offline use (Linux without a display: xvfb-run -a npm test)
+npm test                   # security guards (Node only) and offline use (Linux without a display: xvfb-run -a npm test)
+npm run test:security      # guards alone: bridge, navigation, permissions, update source, health check, languages
 npm run dist:mac           # DMG and ZIP (universal), only on macOS
 npm run dist:win           # installer and ZIP (x64 and ARM)
 npm run dist:linux         # AppImage and tar.gz (x64 and ARM)
@@ -113,7 +128,9 @@ FLOWPLAN_APP="$PWD/dist/mac-arm64/Flowplan.app/Contents/MacOS/Flowplan" npm run 
 FLOWPLAN_APP="$PWD/dist/mac-arm64/Flowplan.app/Contents/MacOS/Flowplan" npm run test:offline
 ```
 
-`test:smoke` checks setup, loading, the offline page, a suggested address, that other servers are refused and the sign-in through the browser (the latter with the development sign-in of a local instance); `test:update` offers the app a newer version from a local source and checks that it is found and offered; `test:offline` (also `npm test`, no instance needed) checks that the window offers what offline use needs and that without a connection the copy stored by the service worker opens – also after a failed page of the instance – and the offline page only without a copy.
+`test:security` ([`test/security.mjs`](test/security.mjs), Node alone, no network) checks the guards: the bridge is absent on anything but the app's own pages, `https://evil.example/api/auth/x` opens in the browser while `<server>/api/auth/x` stays in the window, only the microphone alone is granted, `http://` update sources are refused, the health check's verdicts and that every string exists in all three languages. `test:smoke` checks setup, loading, the offline page, a suggested address, that other servers are refused and the sign-in through the browser (the latter with the development sign-in of a local instance); `test:update` offers the app a newer version from a local source and checks that it is found and offered; `test:offline` (with `test:security` also `npm test`, no instance needed) checks that the window offers what offline use needs, that the instance has no bridge, and that without a connection the copy stored by the service worker opens – also after a failed page of the instance – and the offline page only without a copy.
+
+The app's own words live in [`strings.js`](strings.js) (German, English, French; English for other languages), chosen by `app.getLocale()`; the pages in `pages/` get the language in their address and fill `data-i18n` attributes.
 
 Why Electron and not Tauri: Electron ships the same Chromium everywhere, the browser Flowplan is developed and tested in (service worker, IndexedDB, editor). Tauri uses the system's web views (WebKit on macOS, WebView2 on Windows) and needs a Rust toolchain; the app would be much smaller (~10 MB instead of ~110 MB).
 

@@ -2,23 +2,24 @@
   "name": "flowplan-desktop",
   "productName": "Flowplan",
   "version": "1.0.4",
-  "description": "Flowplan als Desktop-App für macOS, Windows und Linux",
+  "description": "Flowplan as a desktop app for macOS, Windows and Linux",
   "main": "main.js",
   "private": true,
   "author": "Flowplan",
   "license": "AGPL-3.0-only",
   "scripts": {
     "start": "electron .",
-    "check": "node --check main.js && node --check preload.js && node --check updates.js && node --check sign-in.js && node --check fallback.js && node --check test/update.mjs && node --check test/offline.mjs",
-    "test": "node test/offline.mjs",
+    "check": "node --check main.js && node --check preload.js && node --check updates.js && node --check sign-in.js && node --check fallback.js && node --check guards.js && node --check strings.js && node --check pages/setup.js && node --check pages/offline.js && node --check pages/sign-in-page.js && node --check pages/i18n.js && node --check test/security.mjs && node --check test/update.mjs && node --check test/offline.mjs && node --check test/smoke.mjs",
+    "test": "node test/security.mjs && node test/offline.mjs",
+    "test:security": "node test/security.mjs",
     "test:offline": "node test/offline.mjs",
     "test:smoke": "node test/smoke.mjs",
+    "test:update": "node test/update.mjs",
     "dist": "electron-builder --publish never",
     "dist:mac": "electron-builder --mac --publish never",
     "dist:win": "electron-builder --win --publish never",
     "dist:linux": "electron-builder --linux --publish never",
-    "dist:dir": "electron-builder --dir --publish never",
-    "test:update": "node test/update.mjs"
+    "dist:dir": "electron-builder --dir --publish never"
   },
   "devDependencies": {
     "electron": "^44.9.3",
@@ -39,6 +40,8 @@
       "updates.js",
       "sign-in.js",
       "fallback.js",
+      "guards.js",
+      "strings.js",
       "pages/**",
       "build/icon.png",
       "build/update.json",
@@ -69,7 +72,12 @@
         }
       ],
       "hardenedRuntime": true,
-      "artifactName": "Flowplan-${version}-mac.${ext}"
+      "artifactName": "Flowplan-${version}-mac.${ext}",
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Flowplan uses the microphone for voice notes."
+      }
     },
     "dmg": {
       "title": "Flowplan"
@@ -103,7 +111,16 @@
     "linux": {
       "category": "Office",
       "executableName": "flowplan",
-      "synopsis": "Dokumente, Datenbanken, Whiteboards und ein Journal",
+      "maintainer": "Yannic Schuller <76843349+yannicschuller@users.noreply.github.com>",
+      "synopsis": "Documents, databases, whiteboards and a journal",
+      "description": "Flowplan as a desktop app: a window around a Flowplan instance with native menus, offline use and updates. All data stays on the server.",
+      "syncDesktopName": true,
+      "desktop": {
+        "entry": {
+          "Keywords": "flowplan;notes;documents;databases;whiteboard;journal;wiki;",
+          "StartupWMClass": "flowplan"
+        }
+      },
       "target": [
         {
           "target": "AppImage",
@@ -138,5 +155,6 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/yannicschuller/flowplan-desktop.git"
-  }
+  },
+  "desktopName": "flowplan.desktop"
 }

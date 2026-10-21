@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'" />
+    <title data-i18n-title="signIn.title">Continue in the browser</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main>
+      <img src="../build/icon.png" alt="" />
+      <h1 data-i18n="signIn.title">Continue in the browser</h1>
+      <p id="text" data-i18n="signIn.text">Your browser has opened the sign-in. Sign in there and confirm “Sign in to the app” – the app then takes over by itself.</p>
+      <p class="small" data-i18n="signIn.fallback">Nothing happens? Copy the link behind “Open the Flowplan app” from the browser and paste it here.</p>
+      <form id="form">
+        <label for="code" data-i18n="signIn.codeLabel">Link or sign-in code</label>
+        <input id="code" name="code" placeholder="flowplan://sign-in?…" data-i18n-placeholder="signIn.codePlaceholder" autocomplete="off" spellcheck="false" autofocus required />
+        <div class="error" id="error" role="alert"></div>
+        <div class="row">
+          <button id="submit" data-i18n="signIn.paste">Paste code</button>
+          <button id="cancel" type="button" class="secondary" data-i18n="signIn.cancel">Cancel</button>
+        </div>
+      </form>
+    </main>
+    <script src="../strings.js"></script>
+    <script src="i18n.js"></script>
+    <script src="sign-in-page.js"></script>
+  </body>
+</html>

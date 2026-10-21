@@ -1,4 +1,5 @@
-# Every push and pull request: syntax check and a Linux test build.
+# Every push and pull request: syntax check, the tests without a network, a
+# supported Electron and a Linux test build.
 name: CI
 
 on:
@@ -31,5 +32,26 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      - name: Security guards (Node only)
+        run: npm run test:security
+      - name: Electron still supported
+        # Electron keeps the latest three majors patched. An installed major
+        # older than latest − 2 gets no Chromium security fixes any more.
+        run: |
+          installed="$(node -p 'require("electron/package.json").version.split(".")[0]')"
+          latest="$(npm view electron dist-tags.latest | cut -d. -f1)"
+          oldest=$((latest - 2))
+          echo "Electron $installed installed; supported: $oldest to $latest"
+          if [ "$installed" -lt "$oldest" ]; then
+            echo "::error::Electron $installed is end-of-life (supported majors: $oldest to $latest). Upgrade electron in package.json."
+            exit 1
+          fi
+      - name: Offline use (Electron under xvfb)
+        run: |
+          if command -v xvfb-run > /dev/null; then
+            xvfb-run -a npm run test:offline
+          else
+            echo "::warning::xvfb-run is not installed on this runner; the offline test was skipped."
+          fi
       - name: Test build (Linux, unpacked)
         run: npx electron-builder --linux dir --publish never

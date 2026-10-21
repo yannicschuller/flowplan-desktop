@@ -1,23 +1,25 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'" />
-    <title>Flowplan einrichten</title>
+    <title data-i18n-title="setup.title">Set up Flowplan</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <main>
       <img src="../build/icon.png" alt="" />
-      <h1>Willkommen bei Flowplan</h1>
-      <p>Verbinde dich mit app.flowplan.org oder gib die Adresse deiner eigenen Flowplan-Instanz ein. Du kannst sie später im Menü unter „Server wechseln“ ändern.</p>
+      <h1 data-i18n="setup.heading">Welcome to Flowplan</h1>
+      <p data-i18n="setup.text">Connect to app.flowplan.org or enter the address of your own Flowplan instance. You can change it later in the menu under “Change Server”.</p>
       <form id="form">
-        <label for="server">Adresse der Instanz</label>
-        <input id="server" name="server" placeholder="flowplan.deine-firma.de" autocomplete="url" autofocus required />
+        <label for="server" data-i18n="setup.label">Address of the instance</label>
+        <input id="server" name="server" placeholder="flowplan.your-company.com" data-i18n-placeholder="setup.placeholder" autocomplete="url" autofocus required />
         <div class="error" id="error" role="alert"></div>
-        <button id="submit">Verbinden</button>
+        <button id="submit" data-i18n="setup.connect">Connect</button>
       </form>
     </main>
+    <script src="../strings.js"></script>
+    <script src="i18n.js"></script>
     <script src="setup.js"></script>
   </body>
 </html>

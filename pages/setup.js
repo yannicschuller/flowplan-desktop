@@ -1,3 +1,4 @@
+const { t } = window.flowplanStrings;
 const form = document.getElementById("form"),
   input = document.getElementById("server"),
   error = document.getElementById("error"),
@@ -10,12 +11,12 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
   error.textContent = "";
   submit.disabled = true;
-  submit.textContent = "Verbinde …";
+  submit.textContent = t("setup.connecting");
   try {
     await window.flowplanDesktop.setServer(input.value);
   } catch (e) {
     error.textContent = String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
     submit.disabled = false;
-    submit.textContent = "Verbinden";
+    submit.textContent = t("setup.connect");
   }
 });

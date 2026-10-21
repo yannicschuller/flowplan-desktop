@@ -27,12 +27,12 @@ async function launch(config, env = {}) {
 // First start: the setup page, a wrong address is refused, the right one loads.
 {
   const { app, window } = await launch();
-  await window.waitForSelector("text=Willkommen bei Flowplan");
+  await window.waitForSelector("#form");
   assert.equal(await window.inputValue("#server"), "https://app.flowplan.org");
   await window.fill("#server", "http://127.0.0.1:1");
   await window.click("#submit");
   await window.waitForSelector("#error:not(:empty)");
-  assert.match(await window.textContent("#error"), /keine Flowplan-Instanz/);
+  assert.match(await window.textContent("#error"), /keine Flowplan-Instanz|No Flowplan instance|Aucune instance Flowplan/);
   await window.fill("#server", server);
   await window.click("#submit");
   await window.waitForURL((url) => url.href.startsWith(server), { timeout: 30000 });
@@ -45,7 +45,7 @@ async function launch(config, env = {}) {
 // An unreachable instance shows the offline page.
 {
   const { app, window } = await launch({ server: "http://127.0.0.1:1" });
-  await window.waitForSelector("text=Keine Verbindung zu Flowplan", { timeout: 30000 });
+  await window.waitForSelector("#retry", { timeout: 30000 });
   await window.screenshot({ path: "test/offline.png" });
   await app.close();
   console.log("✔ Offline-Seite");
@@ -53,7 +53,7 @@ async function launch(config, env = {}) {
 // A preset address (managed installation) is suggested, the first start still asks.
 {
   const { app, window } = await launch(undefined, { FLOWPLAN_SERVER: server });
-  await window.waitForSelector("text=Willkommen bei Flowplan");
+  await window.waitForSelector("#form");
   assert.equal(await window.inputValue("#server"), new URL(server).origin);
   await window.click("#submit");
   await window.waitForURL((url) => url.href.startsWith(server), { timeout: 30000 });
@@ -68,11 +68,11 @@ async function launch(config, env = {}) {
   });
   await new Promise((done) => other.listen(0, "127.0.0.1", done));
   const { app, window } = await launch();
-  await window.waitForSelector("text=Willkommen bei Flowplan");
+  await window.waitForSelector("#form");
   await window.fill("#server", `http://127.0.0.1:${other.address().port}`);
   await window.click("#submit");
   await window.waitForSelector("#error:not(:empty)");
-  assert.match(await window.textContent("#error"), /Dort läuft kein Flowplan/);
+  assert.match(await window.textContent("#error"), /Dort läuft kein Flowplan|no Flowplan running|Aucun Flowplan/);
   await app.close();
   other.close();
   console.log("✔ Fremder Server abgelehnt");
@@ -90,6 +90,8 @@ async function launch(config, env = {}) {
   await passkey.waitFor({ timeout: 60000 });
   await passkey.evaluate((a) => a.click());
   await window.waitForTimeout(500);
+  // The "continue in the browser" window waits with a field for the code.
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 2);
   const [opened] = await app.evaluate(() => globalThis.opened);
   assert.ok(opened?.startsWith(`${server}/api/auth/desktop?challenge=`), opened);
   // The browser: sign in, confirm, follow the link back.
@@ -103,6 +105,9 @@ async function launch(config, env = {}) {
   await browser.dispose();
   await app.evaluate(({ app }, link) => app.emit("open-url", { preventDefault() {} }, link), link);
   await window.waitForFunction(async () => (await fetch("/api/bootstrap")).ok, undefined, { timeout: 30000 });
+  // Signed in: the waiting window is gone, and the instance has no bridge.
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 1);
+  assert.equal(await window.evaluate(() => typeof window.flowplanDesktop), "undefined");
   await app.close();
   console.log("✔ Anmeldung im Browser");
 }

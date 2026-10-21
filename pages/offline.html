@@ -1,21 +1,23 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'" />
-    <title>Keine Verbindung</title>
+    <title data-i18n-title="offline.title">No connection</title>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <main>
       <img src="../build/icon.png" alt="" />
-      <h1>Keine Verbindung zu Flowplan</h1>
-      <p id="detail">Der Server ist gerade nicht erreichbar. Prüfe deine Internetverbindung oder die Adresse der Instanz.</p>
+      <h1 data-i18n="offline.heading">No connection to Flowplan</h1>
+      <p id="detail" data-i18n="offline.text">The server cannot be reached right now. Check your internet connection or the address of the instance.</p>
       <div class="row">
-        <button id="retry">Erneut versuchen</button>
-        <button id="change" class="secondary">Server wechseln</button>
+        <button id="retry" data-i18n="offline.retry">Try again</button>
+        <button id="change" class="secondary" data-i18n="offline.changeServer">Change server</button>
       </div>
     </main>
+    <script src="../strings.js"></script>
+    <script src="i18n.js"></script>
     <script src="offline.js"></script>
   </body>
 </html>
