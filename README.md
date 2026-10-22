@@ -91,7 +91,7 @@ Releases are unsigned until the repository has these secrets (Settings → Secre
 | `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | macOS notarization |
 | `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD` | Windows code signing certificate |
 
-With `CSC_LINK` set, the release workflow marks the macOS app as signed (`build/update.json`) and it updates itself like on Windows.
+With `CSC_LINK` set, the release workflow marks the macOS app as signed (`build/update.json`) and it updates itself like on Windows. The workflow imports the certificate into a keychain of its own and passes it to electron-builder by name (`CSC_KEYCHAIN`, `CSC_NAME`); the official macOS releases are signed and notarized from 1.0.6 on.
 
 ### macOS: no more quarantine warning
 
