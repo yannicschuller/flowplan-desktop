@@ -67,6 +67,18 @@
     "menu.zoom": ["Zoomen", "Zoom", "Zoom"],
     "menu.front": ["Alle nach vorne", "Bring All to Front", "Tout ramener au premier plan"],
     "menu.close": ["Schließen", "Close", "Fermer"],
+    "menu.notifications": ["Mitteilungen", "Notifications", "Notifications"],
+    "menu.notificationsShow": ["Mitteilungen anzeigen", "Show Notifications", "Afficher les notifications"],
+    "menu.doNotDisturb": ["Nicht stören", "Do Not Disturb", "Ne pas déranger"],
+    "menu.dndOff": ["Aus", "Off", "Désactivé"],
+    "menu.dndHour": ["Für 1 Stunde", "For 1 Hour", "Pendant 1 heure"],
+    "menu.dndTomorrow": ["Bis morgen", "Until Tomorrow", "Jusqu'à demain"],
+    "menu.dndUntil": ["Stumm bis {0}", "Muted until {0}", "En sourdine jusqu'à {0}"],
+    "menu.notificationsAllProfiles": ["Alle Profile", "All Profiles", "Tous les profils"],
+
+    // Notifications (notifier.js, notifications.js)
+    "notifications.many": ["{0} neue Benachrichtigungen", "{0} new notifications", "{0} nouvelles notifications"],
+    "notifications.badge": ["{0} ungelesene Benachrichtigungen", "{0} unread notifications", "{0} notifications non lues"],
 
     // Updates (updates.js)
     "updates.download": ["Herunterladen", "Download", "Télécharger"],

@@ -1,4 +1,4 @@
-// What the window lets through: which pages may use the preload bridge, which
+// What the window lets through: which pages may use the preload bridges, which
 // addresses may open inside the window, which permissions the instance gets
 // and which update source counts. Plain functions without Electron, so
 // test/security.mjs can run them with Node alone.
@@ -33,6 +33,13 @@ function sameOrigin(url, origin) {
   } catch {
     return false;
   }
+}
+// A page of the profile's own instance (http/https, same origin). The small
+// bridge window.FlowplanDesktop (notifications on/off) exists only there, and
+// main.js checks every call from it with this once more.
+function isInstancePage(url, origin) {
+  if (typeof url !== "string" || !/^https?:/i.test(url)) return false;
+  return sameOrigin(url, origin);
 }
 // Whether a navigation may stay in the window: the app's own pages, the
 // instance itself (its sign-in flow included) and the identity provider the
@@ -97,6 +104,7 @@ module.exports = {
   pagesUrl,
   isOwnPage,
   sameOrigin,
+  isInstancePage,
   allowedInWindow,
   isSignInRedirect,
   permissionAllowed,

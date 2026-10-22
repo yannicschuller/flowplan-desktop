@@ -2,9 +2,10 @@
 // Everything runs on the server; the app remembers the instances (profiles,
 // profiles.js), the window and offers native menus, links in the browser, an
 // offline page (when the service worker of offline use has no copy,
-// fallback.js) and updates of itself (updates.js). Its own words come in the
-// system language (strings.js); what the window lets through is decided in
-// guards.js.
+// fallback.js), updates of itself (updates.js) and system notifications with
+// the unread count on the icon (notifier.js, notifications.js – Electron has
+// no Web Push). Its own words come in the system language (strings.js); what
+// the window lets through is decided in guards.js.
 const {
   app,
   BrowserWindow,
@@ -20,8 +21,10 @@ const { setupUpdates, checkForUpdatesNow } = require("./updates");
 const { setupBrowserSignIn } = require("./sign-in");
 const { fallbackFor } = require("./fallback");
 const strings = require("./strings");
-const { isOwnPage, allowedInWindow, isSignInRedirect, permissionAllowed, classifyHealth, defaultPagesDir, sameOrigin: sameOriginAs } = require("./guards");
+const { isOwnPage, isInstancePage, allowedInWindow, isSignInRedirect, permissionAllowed, classifyHealth, defaultPagesDir, sameOrigin: sameOriginAs } = require("./guards");
 const profiles = require("./profiles");
+const { setupNotifier } = require("./notifier");
+const notificationRules = require("./notifications");
 const fs = require("node:fs");
 
 const { t } = strings;
@@ -80,10 +83,13 @@ async function checkServer(origin) {
 // The saved instances and the active one (profiles.js). Read once the app is
 // ready (the user data folder may come from --user-data-dir).
 let state = { profiles: [], activeProfile: null };
+// Notifications of the watched profiles (notifier.js), set up once ready.
+let notifier = null;
 function saveProfiles(next) {
   state = next;
   writeConfig(profiles.toConfig(state));
   refreshProfileMenus();
+  notifier?.reconcile();
 }
 const activeProfile = () => profiles.activeOf(state);
 // The window belongs to one profile: its session, its instance. A new
@@ -110,11 +116,13 @@ const signIn = setupBrowserSignIn({ server, getWindow: () => win, preload, local
 const page = (name) => path.join(defaultPagesDir, name);
 // The app's own pages get the language in their address.
 const loadPage = (name, query = {}) => win.loadFile(page(name), { query: { ...query, lang: strings.locale() } });
-function openServer() {
+// The instance's start page, or `target` when it is an address of the same
+// instance (a clicked notification, checked by notifications.targetUrl).
+function openServer(target) {
   const origin = server();
   if (!win) return;
   if (!origin) return loadPage("setup.html", { server: presetServer() || DEFAULT_SERVER });
-  win.loadURL(origin).catch(() => {});
+  win.loadURL(target && sameOriginAs(target, origin) ? target : origin).catch(() => {});
 }
 // Windows and Linux menus treat "&" as a mnemonic marker.
 const menuText = (text) => (isMac ? text : text.replace(/&/g, "&&"));
@@ -174,7 +182,7 @@ function saveWindowState(w) {
     window: maximized ? { ...(readConfig().window || {}), maximized } : { ...w.getBounds(), maximized },
   });
 }
-function createWindow(profile = activeProfile()) {
+function createWindow(profile = activeProfile(), target) {
   const partition = profiles.partitionFor(profile);
   const ses = sessionFor(profile);
   const profileId = profile ? profile.id : null;
@@ -203,12 +211,18 @@ function createWindow(profile = activeProfile()) {
       nodeIntegration: false,
       spellcheck: true,
       ...(partition ? { partition } : {}),
+      // The preload offers window.FlowplanDesktop on this instance alone.
+      additionalArguments: profile ? [`--flowplan-instance=${profile.server}`, `--flowplan-version=${app.getVersion()}`] : [],
     },
   });
   win = w;
   winProfile = profileId;
   if (windowState.maximized) w.maximize();
-  w.once("ready-to-show", () => w.show());
+  w.once("ready-to-show", () => {
+    w.show();
+    // Windows: the dot on the taskbar button belongs to the window.
+    if (win === w) notifier?.applyBadge(true);
+  });
   w.on("close", () => saveWindowState(w));
   w.on("closed", () => {
     if (win === w) win = null;
@@ -247,16 +261,16 @@ function createWindow(profile = activeProfile()) {
     if (fallbackFor(url, origin()) === "start") return void w.loadURL(origin()).catch(() => {});
     loadPage("offline.html", { server: origin() || "", error: description || String(code) });
   });
-  openServer();
+  openServer(target);
   return w;
 }
 // Another profile: a new window in its session where the old one was; the
 // old one goes once the new one shows (no blank screen in between).
-function replaceWindow(profile) {
+function replaceWindow(profile, target) {
   const old = win && !win.isDestroyed() ? win : null;
   if (old) saveWindowState(old);
   signIn.reset();
-  const next = createWindow(profile);
+  const next = createWindow(profile, target);
   if (!old) return next;
   let gone = false;
   const close = () => {
@@ -279,6 +293,30 @@ function switchProfile(id) {
     return openServer();
   }
   replaceWindow(profile);
+}
+// A clicked notification: to the front, to its profile, to its page – an
+// address of that profile's instance only (notifications.targetUrl).
+function openFromNotification(id, url) {
+  const profile = profiles.findProfile(state, id);
+  if (!profile) return;
+  const target = notificationRules.targetUrl(url, profile.server);
+  // macOS: also out of "Hide Flowplan".
+  if (isMac) app.focus({ steal: true });
+  if (state.activeProfile !== id) saveProfiles({ ...state, activeProfile: id });
+  if (win && !win.isDestroyed() && winProfile === id) {
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    return openServer(target);
+  }
+  const next = win && !win.isDestroyed() ? replaceWindow(profile, target) : createWindow(profile, target);
+  next.once("ready-to-show", () => next.focus());
+}
+// The window's profile while it is in front: its notifications show in the
+// inbox there, so no system notification pops up for them.
+function focusedProfile() {
+  if (!win || win.isDestroyed() || !win.isVisible() || win.isMinimized() || !win.isFocused()) return null;
+  return winProfile;
 }
 function showProfiles() {
   if (!win) return;
@@ -322,6 +360,7 @@ async function removeProfileAsk(id) {
   const wasActive = state.activeProfile === id;
   saveProfiles(profiles.removeProfile(state, id));
   identityHosts.delete(id);
+  notifier?.forgetProfile(id);
   if (wasActive || winProfile === id) replaceWindow(activeProfile());
   await forgetSession(profile);
   return true;
@@ -355,6 +394,40 @@ function profileMenu() {
     { id: "manage-profiles", label: t("menu.manageProfiles"), click: showProfiles },
   ];
 }
+// Notifications in the app menu: on/off, "Do Not Disturb" for an hour or
+// until tomorrow morning, and the active or all profiles.
+function notificationMenu() {
+  const settings = notificationRules.settingsOf(readConfig());
+  const dnd = notificationRules.dndChoice(settings);
+  const until = dnd !== "off" ? new Date(settings.dndUntil).toLocaleString(strings.locale(), { weekday: "short", hour: "2-digit", minute: "2-digit" }) : "";
+  return [
+    {
+      id: "notifications-enabled",
+      label: t("menu.notificationsShow"),
+      type: "checkbox",
+      checked: settings.enabled,
+      click: (item) => notifier?.setEnabled(item.checked),
+    },
+    {
+      label: t("menu.doNotDisturb"),
+      enabled: settings.enabled,
+      submenu: [
+        ...(until ? [{ label: t("menu.dndUntil", until), enabled: false }, { type: "separator" }] : []),
+        { id: "dnd-off", label: t("menu.dndOff"), type: "radio", checked: dnd === "off", click: () => notifier?.setDnd("off") },
+        { id: "dnd-hour", label: t("menu.dndHour"), type: "radio", checked: dnd === "hour", click: () => notifier?.setDnd("hour") },
+        { id: "dnd-tomorrow", label: t("menu.dndTomorrow"), type: "radio", checked: dnd === "tomorrow", click: () => notifier?.setDnd("tomorrow") },
+      ],
+    },
+    {
+      id: "notifications-all-profiles",
+      label: t("menu.notificationsAllProfiles"),
+      type: "checkbox",
+      checked: settings.allProfiles,
+      enabled: settings.enabled,
+      click: (item) => notifier?.setAllProfiles(item.checked),
+    },
+  ];
+}
 function refreshProfileMenus() {
   if (!app.isReady()) return;
   buildMenu();
@@ -385,6 +458,7 @@ function buildMenu() {
               { label: t("menu.checkUpdates"), click: checkForUpdatesNow },
               { type: "separator" },
               { label: t("menu.profiles"), submenu: profileMenu() },
+              { label: t("menu.notifications"), submenu: notificationMenu() },
               { type: "separator" },
               { role: "hide", label: t("menu.hide") },
               { role: "hideOthers", label: t("menu.hideOthers") },
@@ -399,6 +473,7 @@ function buildMenu() {
             label: t("menu.file"),
             submenu: [
               { label: t("menu.profiles"), submenu: profileMenu() },
+              { label: t("menu.notifications"), submenu: notificationMenu() },
               { label: t("menu.checkUpdates"), click: checkForUpdatesNow },
               { type: "separator" },
               { role: "quit", label: t("menu.quit") },
@@ -471,13 +546,22 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-// The bridge (preload.js) answers only the app's own pages: every call is
-// checked against the frame it comes from. The instance's pages – or
-// anything injected there – cannot read or change the profiles.
-function handle(channel, fn) {
+// The bridges (preload.js): every call is checked against the frame it comes
+// from. Most channels answer only the app's own pages – the instance's pages,
+// or anything injected there, cannot read or change the profiles. The few
+// `instance` channels (notifications on/off) answer only the main frame of a
+// page of the instance whose profile owns the calling session.
+function fromOwnInstance(event) {
+  const frame = event.senderFrame;
+  if (!frame || frame.parent) return false;
+  const owner = ownerOf(event.sender.session);
+  return !!owner && isInstancePage(frame.url, owner.server);
+}
+function handle(channel, fn, { instance = false } = {}) {
   ipcMain.handle(channel, (event, ...args) => {
     const from = event.senderFrame?.url;
-    if (!isOwnPage(from, defaultPagesDir)) throw new Error(`${channel}: not available to ${from || "unknown frame"}`);
+    const allowed = instance ? fromOwnInstance(event) : isOwnPage(from, defaultPagesDir);
+    if (!allowed) throw new Error(`${channel}: not available to ${from || "unknown frame"}`);
     return fn(event, ...args);
   });
 }
@@ -514,6 +598,9 @@ handle("flowplan:new-profile", () => showAddProfile());
 handle("flowplan:retry", () => openServer());
 handle("flowplan:sign-in-paste", (_event, text) => signIn.paste(text));
 handle("flowplan:sign-in-cancel", () => signIn.cancel());
+handle("flowplan:notifications-enabled", () => !!notifier && notifier.settings().enabled, { instance: true });
+handle("flowplan:notifications-set-enabled", (_event, on) => !!notifier && notifier.setEnabled(on === true), { instance: true });
+handle("flowplan:notifications-refresh", (event) => notifier?.refresh(ownerOf(event.sender.session)?.id), { instance: true });
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
@@ -528,6 +615,9 @@ else {
   });
   // The instance shows its desktop sign-in (passkeys, SSO in the browser).
   app.userAgentFallback = `${app.userAgentFallback} FlowplanDesktop/${app.getVersion()}`;
+  // Windows shows notifications only for an app with this id (the installer
+  // gives the shortcut the same).
+  if (process.platform === "win32") app.setAppUserModelId("app.flowplan.desktop");
   app.whenReady().then(() => {
     strings.setLocale(app.getLocale());
     // A single address of an older version becomes the first profile.
@@ -537,8 +627,20 @@ else {
     if (wanted) state = { ...state, activeProfile: wanted.id };
     if (state.profiles.length && (!Array.isArray(config.profiles) || wanted)) writeConfig(profiles.toConfig(state));
     prepareSession(session.defaultSession);
+    notifier = setupNotifier({
+      getState: () => state,
+      sessionFor,
+      readConfig,
+      writeConfig,
+      t,
+      open: openFromNotification,
+      focusedProfile,
+      getWindow: () => win,
+      changed: refreshProfileMenus,
+    });
     refreshProfileMenus();
     createWindow();
+    notifier.start();
     signIn.ready();
     setupUpdates();
     app.on("activate", () => {

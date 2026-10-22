@@ -1,4 +1,4 @@
-// What the window lets through (guards.js, profiles.js, strings.js, updates.js), checked
+// What the window lets through (guards.js, profiles.js, notifications.js, strings.js, updates.js), checked
 // with Node alone – no Electron, no network. Usage: node test/security.mjs
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
@@ -11,7 +11,8 @@ const root = new URL("..", import.meta.url).pathname;
 const guards = require("../guards.js");
 const profiles = require("../profiles.js");
 const strings = require("../strings.js");
-const { isOwnPage, allowedInWindow, isSignInRedirect, permissionAllowed, updateFeedUrl, classifyHealth } = guards;
+const notifications = require("../notifications.js");
+const { isOwnPage, isInstancePage, allowedInWindow, isSignInRedirect, permissionAllowed, updateFeedUrl, classifyHealth } = guards;
 
 const pagesDir = join(root, "pages");
 const page = (name) => pathToFileURL(join(pagesDir, name)).href;
@@ -41,6 +42,53 @@ const server = "https://flowplan.example.com";
   assert.equal((main.match(/ipcMain\.handle\(/g) || []).length, 1, "ipcMain.handle only inside handle()");
   assert.match(main, /isOwnPage\(from, defaultPagesDir\)/);
   console.log("✔ Bridge nur für eigene Seiten");
+}
+
+// E15: the tiny bridge of the instance (window.FlowplanDesktop) – only on the
+// window profile's own instance, only notifications on/off, every call
+// checked against the main frame and the session's profile.
+{
+  const own = "https://flowplan.example.com";
+  assert.equal(isInstancePage(`${own}/#page=1`, own), true);
+  assert.equal(isInstancePage(`${own}/api/auth/login`, own), true);
+  assert.equal(isInstancePage("https://evil.example/", own), false);
+  assert.equal(isInstancePage("https://flowplan.example.com.evil.example/", own), false);
+  assert.equal(isInstancePage("http://flowplan.example.com/", own), false, "another scheme is another origin");
+  assert.equal(isInstancePage(page("setup.html"), own), false, "file: pages have the other bridge");
+  assert.equal(isInstancePage(`${own}/`, undefined), false, "no profile, no instance");
+  assert.equal(isInstancePage(undefined, own), false);
+  assert.equal(isInstancePage("javascript:alert(1)", own), false);
+  const preload = readFileSync(join(root, "preload.js"), "utf8");
+  assert.match(preload, /else if \(instance && \(location\.protocol === "https:" \|\| location\.protocol === "http:"\) && location\.origin === instance\)\s*contextBridge\.exposeInMainWorld\("FlowplanDesktop"/);
+  const instanceBridge = preload.slice(preload.indexOf('exposeInMainWorld("FlowplanDesktop"'));
+  assert.deepEqual([...instanceBridge.matchAll(/"flowplan:([a-z-]+)"/g)].map((m) => m[1]).sort(), ["notifications-enabled", "notifications-refresh", "notifications-set-enabled"], "notifications alone");
+  const main = readFileSync(join(root, "main.js"), "utf8");
+  assert.deepEqual([...main.matchAll(/handle\("flowplan:([a-z-]+)",[^\n]*\{ instance: true \}\);/g)].map((m) => m[1]).sort(), ["notifications-enabled", "notifications-refresh", "notifications-set-enabled"], "only these channels answer the instance");
+  assert.match(main, /if \(!frame \|\| frame\.parent\) return false;/, "the main frame only");
+  assert.match(main, /isInstancePage\(frame\.url, owner\.server\)/, "of the session's own profile");
+  assert.match(main, /additionalArguments: profile \? \[`--flowplan-instance=\$\{profile\.server\}`/);
+  console.log("✔ Kleine Brücke nur auf der eigenen Instanz");
+}
+
+// E16: notifications ask only the profile's own instance with its own session
+// and a click opens only an address of that instance.
+{
+  const own = "https://flowplan.example.com";
+  assert.equal(notifications.targetUrl("/#page=a&row=b", own), `${own}/#page=a&row=b`);
+  for (const url of ["https://evil.example/", "//evil.example/", "javascript:alert(1)", "file:///etc/passwd", `https://x:y@flowplan.example.com/`, "http://flowplan.example.com/"])
+    assert.equal(notifications.targetUrl(url, own), `${own}/`, url);
+  const notifier = readFileSync(join(root, "notifier.js"), "utf8");
+  assert.match(notifier, /new URL\("\/api\/notifications", profile\.server\)/, "the profile's own instance");
+  assert.match(notifier, /deps\.sessionFor\(profile\)\.fetch\(/, "with the profile's own session");
+  assert.match(notifier, /redirect: "error"/, "no redirects elsewhere");
+  assert.doesNotMatch(notifier, /require\("node:(fs|child_process)"\)|shell\./, "no files, no shell");
+  const main = readFileSync(join(root, "main.js"), "utf8");
+  assert.match(main, /const target = notificationRules\.targetUrl\(url, profile\.server\);/, "a click is checked");
+  assert.match(main, /win\.loadURL\(target && sameOriginAs\(target, origin\) \? target : origin\)/, "and checked again before loading");
+  // Nothing from the server is trusted unchecked.
+  const feed = notifications.cleanFeed({ unread: "9", notifications: [{ id: "a", text: { toString: () => "x" }, url: ["/"], push: 1 }] });
+  assert.deepEqual(feed, { unread: 0, notifications: [{ id: "a", text: "", detail: "", url: "", createdAt: null, read: false, push: false }] });
+  console.log("✔ Mitteilungen nur von der eigenen Instanz");
 }
 
 // E2/E7: what may open inside the window.
@@ -253,5 +301,6 @@ const server = "https://flowplan.example.com";
   assert.match(ci, /dist-tags\.latest/, "CI compares with the latest Electron");
   assert.match(ci, /test:security/, "CI runs this test");
   assert.match(ci, /test:profiles/, "CI runs the profiles test");
+  assert.match(ci, /test:notifications/, "CI runs the notifications test");
   console.log("✔ CI prüft Electron und Tests");
 }
