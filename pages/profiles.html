@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'" />
+    <title data-i18n-title="profiles.title">Profiles</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main>
+      <img src="../build/icon.png" alt="" />
+      <h1 data-i18n="profiles.title">Profiles</h1>
+      <p data-i18n="profiles.text">Each profile is a Flowplan instance with its own sign-in. Switch with the menu or Ctrl+Shift+P.</p>
+      <ul id="list" class="profiles"></ul>
+      <div class="error" id="error" role="alert"></div>
+      <div class="row">
+        <button id="add" data-i18n="profiles.add">Add profile</button>
+        <button id="back" class="secondary" data-i18n="profiles.back">Back</button>
+      </div>
+    </main>
+    <script src="../strings.js"></script>
+    <script src="i18n.js"></script>
+    <script src="profiles-page.js"></script>
+  </body>
+</html>

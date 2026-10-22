@@ -152,6 +152,12 @@ function setupBrowserSignIn({ server, getWindow, preload, locale = () => "en" })
     intercept,
     paste,
     cancel: () => closeWaiting(),
+    // Another profile becomes active: a sign-in started for the previous one
+    // must not land in the new one (two profiles may share an instance).
+    reset() {
+      pending.clear();
+      closeWaiting();
+    },
     // The window exists: links that arrived during start-up are handled.
     ready() {
       ready = true;

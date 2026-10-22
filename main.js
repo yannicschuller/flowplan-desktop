@@ -1,9 +1,10 @@
 // Flowplan for macOS, Windows and Linux: a window around a Flowplan instance.
-// Everything runs on the server; the app remembers the address, the window
-// and offers native menus, links in the browser, an offline page (when the
-// service worker of offline use has no copy, fallback.js) and updates
-// of itself (updates.js). Its own words come in the system language
-// (strings.js); what the window lets through is decided in guards.js.
+// Everything runs on the server; the app remembers the instances (profiles,
+// profiles.js), the window and offers native menus, links in the browser, an
+// offline page (when the service worker of offline use has no copy,
+// fallback.js) and updates of itself (updates.js). Its own words come in the
+// system language (strings.js); what the window lets through is decided in
+// guards.js.
 const {
   app,
   BrowserWindow,
@@ -20,6 +21,7 @@ const { setupBrowserSignIn } = require("./sign-in");
 const { fallbackFor } = require("./fallback");
 const strings = require("./strings");
 const { isOwnPage, allowedInWindow, isSignInRedirect, permissionAllowed, classifyHealth, defaultPagesDir, sameOrigin: sameOriginAs } = require("./guards");
+const profiles = require("./profiles");
 const fs = require("node:fs");
 
 const { t } = strings;
@@ -35,7 +37,11 @@ function readConfig() {
 function writeConfig(patch) {
   const next = { ...readConfig(), ...patch };
   fs.mkdirSync(path.dirname(configFile()), { recursive: true });
-  fs.writeFileSync(configFile(), JSON.stringify(next, null, 2));
+  // Written next to it and renamed: a crash or a reader never sees half a
+  // file (and with it no profiles).
+  const temporary = `${configFile()}.${process.pid}.tmp`;
+  fs.writeFileSync(temporary, JSON.stringify(next, null, 2));
+  fs.renameSync(temporary, configFile());
   return next;
 }
 // Addresses are https (or http only for local development).
@@ -71,7 +77,19 @@ async function checkServer(origin) {
   throw new Error(t("server.notFlowplan"));
 }
 
+// The saved instances and the active one (profiles.js). Read once the app is
+// ready (the user data folder may come from --user-data-dir).
+let state = { profiles: [], activeProfile: null };
+function saveProfiles(next) {
+  state = next;
+  writeConfig(profiles.toConfig(state));
+  refreshProfileMenus();
+}
+const activeProfile = () => profiles.activeOf(state);
+// The window belongs to one profile: its session, its instance. A new
+// profile gets a new window (the session of a window cannot change).
 let win = null;
+let winProfile = null;
 // Suggested on the setup page: the public instance, or for managed
 // installations --server=<url> or the environment variable FLOWPLAN_SERVER.
 // The first start always asks; only the confirmed address is remembered.
@@ -86,27 +104,92 @@ function presetServer() {
     return undefined;
   }
 }
-const server = () => readConfig().server;
+const server = () => activeProfile()?.server;
 const preload = path.join(__dirname, "preload.js");
 const signIn = setupBrowserSignIn({ server, getWindow: () => win, preload, locale: strings.locale });
-const suggestedServer = () => server() || presetServer() || DEFAULT_SERVER;
 const page = (name) => path.join(defaultPagesDir, name);
 // The app's own pages get the language in their address.
 const loadPage = (name, query = {}) => win.loadFile(page(name), { query: { ...query, lang: strings.locale() } });
-const sameOrigin = (url) => sameOriginAs(url, server());
 function openServer() {
   const origin = server();
   if (!win) return;
-  if (!origin) return loadPage("setup.html", { server: suggestedServer() });
+  if (!origin) return loadPage("setup.html", { server: presetServer() || DEFAULT_SERVER });
   win.loadURL(origin).catch(() => {});
 }
-function createWindow() {
-  const state = readConfig().window || {};
-  win = new BrowserWindow({
-    width: state.width || 1320,
-    height: state.height || 860,
-    x: state.x,
-    y: state.y,
+// Windows and Linux menus treat "&" as a mnemonic marker.
+const menuText = (text) => (isMac ? text : text.replace(/&/g, "&&"));
+
+// Every session of a profile gets the same rules once: spell checking, the
+// permissions of its own instance and the identity hosts of its sign-in.
+// Which profile a session belongs to is looked up at the time of a request,
+// so a session never acts for another profile's instance.
+const sessionOwner = new WeakMap(); // session → profile id (or null)
+const prepared = new WeakSet();
+// Hosts seen during a profile's sign-in are allowed in its window afterwards.
+const identityHosts = new Map(); // profile id → Set of hosts
+const hostsOf = (id) => {
+  if (!identityHosts.has(id)) identityHosts.set(id, new Set());
+  return identityHosts.get(id);
+};
+const ownerOf = (ses) => profiles.findProfile(state, sessionOwner.get(ses));
+function prepareSession(ses) {
+  if (prepared.has(ses)) return;
+  prepared.add(ses);
+  ses.setSpellCheckerLanguages?.(["de-DE", "en-US", "fr-FR"]);
+  // The instance gets notifications, clipboard, fullscreen and the
+  // microphone alone (voice notes) – no camera, no screen – and only the
+  // instance of the active profile that owns this session.
+  ses.setPermissionRequestHandler((wc, permission, done, details) => {
+    const owner = ownerOf(ses);
+    const fromInstance = !!owner && owner.id === state.activeProfile && sameOriginAs(wc.getURL(), owner.server);
+    done(permissionAllowed(permission, details, fromInstance));
+  });
+  ses.webRequest.onBeforeRedirect((details) => {
+    if (details.resourceType !== "mainFrame") return;
+    const owner = ownerOf(ses);
+    if (!owner) return;
+    let from, next;
+    try {
+      from = new URL(details.url);
+      next = new URL(details.redirectURL);
+    } catch {
+      return;
+    }
+    if (next.origin === owner.server) return;
+    // From the instance's sign-in to the provider, and from one host of the
+    // provider to the next (login.example → account.example).
+    const hosts = hostsOf(owner.id);
+    if (isSignInRedirect(details.url, owner.server) || hosts.has(from.host)) hosts.add(next.host);
+  });
+}
+function sessionFor(profile) {
+  const partition = profiles.partitionFor(profile);
+  return partition ? session.fromPartition(partition) : session.defaultSession;
+}
+
+function saveWindowState(w) {
+  if (!w || w.isDestroyed()) return;
+  const maximized = w.isMaximized();
+  writeConfig({
+    window: maximized ? { ...(readConfig().window || {}), maximized } : { ...w.getBounds(), maximized },
+  });
+}
+function createWindow(profile = activeProfile()) {
+  const partition = profiles.partitionFor(profile);
+  const ses = sessionFor(profile);
+  const profileId = profile ? profile.id : null;
+  sessionOwner.set(ses, profileId);
+  prepareSession(ses);
+  // The instance of this window's profile – checked at every navigation, so
+  // only the active profile's origin stays inside the window.
+  const origin = () => (profileId ? profiles.findProfile(state, profileId)?.server : undefined);
+  const sameOrigin = (url) => sameOriginAs(url, origin());
+  const windowState = readConfig().window || {};
+  const w = new BrowserWindow({
+    width: windowState.width || 1320,
+    height: windowState.height || 860,
+    x: windowState.x,
+    y: windowState.y,
     minWidth: 380,
     minHeight: 500,
     title: "Flowplan",
@@ -119,69 +202,176 @@ function createWindow() {
       sandbox: true,
       nodeIntegration: false,
       spellcheck: true,
+      ...(partition ? { partition } : {}),
     },
   });
-  if (state.maximized) win.maximize();
-  win.once("ready-to-show", () => win.show());
-  const saveState = () => {
-    if (!win || win.isDestroyed()) return;
-    const maximized = win.isMaximized();
-    writeConfig({
-      window: maximized
-        ? { ...(readConfig().window || {}), maximized }
-        : { ...win.getBounds(), maximized },
-    });
-  };
-  win.on("close", saveState);
+  win = w;
+  winProfile = profileId;
+  if (windowState.maximized) w.maximize();
+  w.once("ready-to-show", () => w.show());
+  w.on("close", () => saveWindowState(w));
+  w.on("closed", () => {
+    if (win === w) win = null;
+  });
+  // With more than one profile the title names the profile.
+  w.webContents.on("page-title-updated", (event, title) => {
+    const own = profiles.findProfile(state, profileId);
+    if (!own || state.profiles.length < 2) return;
+    event.preventDefault();
+    w.setTitle(`${title} – ${own.name}`);
+  });
   // Links to other sites open in the default browser; sign-in pages of the
   // identity provider stay in the window.
-  win.webContents.setWindowOpenHandler(({ url }) => {
+  w.webContents.setWindowOpenHandler(({ url }) => {
     if (signIn.intercept(url)) return { action: "deny" };
     if (!sameOrigin(url) && /^(https?:|mailto:)/i.test(url))
       void shell.openExternal(url);
-    else if (sameOrigin(url)) win.loadURL(url);
+    else if (sameOrigin(url)) w.loadURL(url);
     return { action: "deny" };
   });
-  win.webContents.on("will-navigate", (event, url) => {
+  w.webContents.on("will-navigate", (event, url) => {
     // Passkeys and SSO: sign in through the system browser (sign-in.js).
-    if (signIn.intercept(url)) return event.preventDefault();
-    // In the window: the app's own pages, the instance (its /api/auth/… sign-in
-    // included) and the identity provider its sign-in redirected to. Any
-    // other address – also one that merely contains /api/auth/ – goes to the
-    // browser.
-    if (allowedInWindow(url, { server: server(), pagesDir: defaultPagesDir, identityHosts })) return;
+    if (win === w && signIn.intercept(url)) return event.preventDefault();
+    // In the window: the app's own pages, the profile's instance (its
+    // /api/auth/… sign-in included) and the identity provider its sign-in
+    // redirected to. Any other address – also one that merely contains
+    // /api/auth/, also another profile's instance – goes to the browser.
+    if (allowedInWindow(url, { server: origin(), pagesDir: defaultPagesDir, identityHosts: profileId ? hostsOf(profileId) : new Set() })) return;
     event.preventDefault();
     if (/^https?:/i.test(url)) void shell.openExternal(url);
   });
-  win.webContents.on("did-fail-load", (_e, code, description, url, isMain) => {
+  w.webContents.on("did-fail-load", (_e, code, description, url, isMain) => {
     if (!isMain || code === -3) return; // -3: navigation replaced
+    if (win !== w) return;
     // Offline copies open from the service worker under "/" (fallback.js).
-    if (fallbackFor(url, server()) === "start") return void win.loadURL(server()).catch(() => {});
-    loadPage("offline.html", { server: server() || "", error: description || String(code) });
+    if (fallbackFor(url, origin()) === "start") return void w.loadURL(origin()).catch(() => {});
+    loadPage("offline.html", { server: origin() || "", error: description || String(code) });
   });
   openServer();
+  return w;
 }
-// Hosts seen during sign-in are allowed in the window afterwards.
-const identityHosts = new Set();
-function trackSignIn() {
-  session.defaultSession.webRequest.onBeforeRedirect((details) => {
-    if (details.resourceType !== "mainFrame") return;
-    let from, next;
-    try {
-      from = new URL(details.url);
-      next = new URL(details.redirectURL);
-    } catch {
-      return;
-    }
-    if (next.origin === server()) return;
-    // From the instance's sign-in to the provider, and from one host of the
-    // provider to the next (login.example → account.example).
-    if (isSignInRedirect(details.url, server()) || identityHosts.has(from.host)) identityHosts.add(next.host);
-  });
+// Another profile: a new window in its session where the old one was; the
+// old one goes once the new one shows (no blank screen in between).
+function replaceWindow(profile) {
+  const old = win && !win.isDestroyed() ? win : null;
+  if (old) saveWindowState(old);
+  signIn.reset();
+  const next = createWindow(profile);
+  if (!old) return next;
+  let gone = false;
+  const close = () => {
+    if (gone || old.isDestroyed()) return;
+    gone = true;
+    if (old.isFullScreen()) next.setFullScreen(true);
+    old.destroy();
+  };
+  next.once("ready-to-show", close);
+  setTimeout(close, 4000);
+  return next;
 }
-async function chooseServer() {
+function switchProfile(id) {
+  const profile = profiles.findProfile(state, id);
+  if (!profile) return;
+  if (state.activeProfile !== id) saveProfiles({ ...state, activeProfile: id });
+  if (win && !win.isDestroyed() && winProfile === id) {
+    if (win.isMinimized()) win.restore();
+    win.focus();
+    return openServer();
+  }
+  replaceWindow(profile);
+}
+function showProfiles() {
   if (!win) return;
-  loadPage("setup.html", { server: suggestedServer() });
+  if (win.isMinimized()) win.restore();
+  win.focus();
+  loadPage("profiles.html");
+}
+function showAddProfile() {
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.focus();
+  loadPage("setup.html", { add: "1" });
+}
+// Signs the profile out of its instance (best effort) and removes what its
+// session stored on this computer: cookies, the offline copy, caches.
+async function forgetSession(profile) {
+  const ses = sessionFor(profile);
+  try {
+    await ses.fetch(`${profile.server}/api/auth/logout`, {
+      method: "POST",
+      headers: { Origin: profile.server },
+      signal: AbortSignal.timeout(3000),
+    });
+  } catch {}
+  await ses.clearStorageData().catch(() => {});
+  await ses.clearCache().catch(() => {});
+}
+async function removeProfileAsk(id) {
+  const profile = profiles.findProfile(state, id);
+  if (!profile) return false;
+  const options = {
+    type: "warning",
+    buttons: [t("profiles.remove"), t("profiles.cancel")],
+    defaultId: 1,
+    cancelId: 1,
+    message: t("profiles.removeConfirm", profile.name),
+    detail: t("profiles.removeDetail", new URL(profile.server).host),
+  };
+  const { response } = await (win ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options));
+  if (response !== 0) return false;
+  const wasActive = state.activeProfile === id;
+  saveProfiles(profiles.removeProfile(state, id));
+  identityHosts.delete(id);
+  if (wasActive || winProfile === id) replaceWindow(activeProfile());
+  await forgetSession(profile);
+  return true;
+}
+
+// Profiles in the menu, the dock (macOS) and the jump list (Windows).
+function profileItems() {
+  return state.profiles.map((p) => ({
+    label: menuText(profiles.profileLabel(p)),
+    type: "radio",
+    checked: p.id === state.activeProfile,
+    click: () => switchProfile(p.id),
+  }));
+}
+function profileMenu() {
+  const items = profileItems();
+  return [
+    ...items,
+    ...(items.length ? [{ type: "separator" }] : []),
+    {
+      id: "next-profile",
+      label: t("menu.nextProfile"),
+      accelerator: "CmdOrCtrl+Shift+P",
+      enabled: state.profiles.length > 1,
+      click: () => {
+        const next = profiles.nextProfile(state);
+        if (next) switchProfile(next.id);
+      },
+    },
+    { id: "add-profile", label: t("menu.addProfile"), click: showAddProfile },
+    { id: "manage-profiles", label: t("menu.manageProfiles"), click: showProfiles },
+  ];
+}
+function refreshProfileMenus() {
+  if (!app.isReady()) return;
+  buildMenu();
+  if (isMac) app.dock?.setMenu(Menu.buildFromTemplate([...profileItems(), ...(state.profiles.length ? [{ type: "separator" }] : []), { label: t("menu.addProfile"), click: showAddProfile }]));
+  // The jump list starts the app with --profile=<id>; a running app gets it
+  // as second instance and switches.
+  if (process.platform === "win32" && app.isPackaged)
+    app.setUserTasks(
+      state.profiles.map((p) => ({
+        program: process.execPath,
+        arguments: `--profile=${p.id}`,
+        iconPath: process.execPath,
+        iconIndex: 0,
+        title: profiles.profileLabel(p),
+        description: t("profiles.openProfile", p.name),
+      })),
+    );
 }
 function buildMenu() {
   const nav = (fn) => () => win && fn(win.webContents);
@@ -194,7 +384,7 @@ function buildMenu() {
               { role: "about", label: t("menu.about") },
               { label: t("menu.checkUpdates"), click: checkForUpdatesNow },
               { type: "separator" },
-              { label: t("menu.changeServer"), click: chooseServer },
+              { label: t("menu.profiles"), submenu: profileMenu() },
               { type: "separator" },
               { role: "hide", label: t("menu.hide") },
               { role: "hideOthers", label: t("menu.hideOthers") },
@@ -208,7 +398,7 @@ function buildMenu() {
           {
             label: t("menu.file"),
             submenu: [
-              { label: t("menu.changeServer"), click: chooseServer },
+              { label: t("menu.profiles"), submenu: profileMenu() },
               { label: t("menu.checkUpdates"), click: checkForUpdatesNow },
               { type: "separator" },
               { role: "quit", label: t("menu.quit") },
@@ -283,7 +473,7 @@ function buildMenu() {
 
 // The bridge (preload.js) answers only the app's own pages: every call is
 // checked against the frame it comes from. The instance's pages – or
-// anything injected there – cannot read or change the server address.
+// anything injected there – cannot read or change the profiles.
 function handle(channel, fn) {
   ipcMain.handle(channel, (event, ...args) => {
     const from = event.senderFrame?.url;
@@ -291,20 +481,37 @@ function handle(channel, fn) {
     return fn(event, ...args);
   });
 }
+const publicProfiles = () => ({
+  profiles: state.profiles.map(({ id, name, server }) => ({ id, name, server })),
+  active: state.activeProfile,
+});
 handle("flowplan:get-server", () => server() || "");
-handle("flowplan:set-server", async (_event, input) => {
-  const origin = normalizeServer(input);
+handle("flowplan:get-profiles", () => publicProfiles());
+handle("flowplan:add-profile", async (_event, input) => {
+  const origin = normalizeServer(input?.server);
   try {
     await checkServer(origin);
   } catch (e) {
     throw new Error(t("server.notFound", origin, e.message));
   }
-  writeConfig({ server: origin });
-  openServer();
-  return origin;
+  if (state.profiles.length >= profiles.MAX_PROFILES) throw new Error(t("profiles.tooMany", profiles.MAX_PROFILES));
+  const { state: next, profile } = profiles.addProfile(state, { name: input?.name, server: origin });
+  saveProfiles(next);
+  replaceWindow(profile);
+  return profile.id;
 });
+handle("flowplan:rename-profile", (_event, id, name) => {
+  saveProfiles(profiles.renameProfile(state, String(id), name));
+  return publicProfiles();
+});
+handle("flowplan:remove-profile", async (_event, id) => {
+  await removeProfileAsk(String(id));
+  return publicProfiles();
+});
+handle("flowplan:switch-profile", (_event, id) => switchProfile(String(id)));
+handle("flowplan:show-profiles", () => showProfiles());
+handle("flowplan:new-profile", () => showAddProfile());
 handle("flowplan:retry", () => openServer());
-handle("flowplan:change-server", () => chooseServer());
 handle("flowplan:sign-in-paste", (_event, text) => signIn.paste(text));
 handle("flowplan:sign-in-cancel", () => signIn.cancel());
 
@@ -312,6 +519,9 @@ if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on("second-instance", (_event, argv) => {
     signIn.secondInstance(argv);
+    // --profile=<id> from the jump list or a script: a saved profile only.
+    const wanted = profiles.profileFromArgs(state, argv);
+    if (wanted) return switchProfile(wanted.id);
     if (!win) return;
     if (win.isMinimized()) win.restore();
     win.focus();
@@ -320,14 +530,14 @@ else {
   app.userAgentFallback = `${app.userAgentFallback} FlowplanDesktop/${app.getVersion()}`;
   app.whenReady().then(() => {
     strings.setLocale(app.getLocale());
-    session.defaultSession.setSpellCheckerLanguages?.(["de-DE", "en-US", "fr-FR"]);
-    // The instance gets notifications, clipboard, fullscreen and the
-    // microphone alone (voice notes) – no camera, no screen.
-    session.defaultSession.setPermissionRequestHandler((wc, permission, done, details) => {
-      done(permissionAllowed(permission, details, sameOrigin(wc.getURL())));
-    });
-    trackSignIn();
-    buildMenu();
+    // A single address of an older version becomes the first profile.
+    const config = readConfig();
+    state = profiles.loadProfiles(config);
+    const wanted = profiles.profileFromArgs(state, process.argv);
+    if (wanted) state = { ...state, activeProfile: wanted.id };
+    if (state.profiles.length && (!Array.isArray(config.profiles) || wanted)) writeConfig(profiles.toConfig(state));
+    prepareSession(session.defaultSession);
+    refreshProfileMenus();
     createWindow();
     signIn.ready();
     setupUpdates();

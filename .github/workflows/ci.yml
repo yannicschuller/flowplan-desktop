@@ -53,5 +53,12 @@ jobs:
           else
             echo "::warning::xvfb-run is not installed on this runner; the offline test was skipped."
           fi
+      - name: Profiles (Electron under xvfb)
+        run: |
+          if command -v xvfb-run > /dev/null; then
+            xvfb-run -a npm run test:profiles
+          else
+            echo "::warning::xvfb-run is not installed on this runner; the profiles test was skipped."
+          fi
       - name: Test build (Linux, unpacked)
         run: npx electron-builder --linux dir --publish never

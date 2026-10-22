@@ -31,7 +31,10 @@
     // Menu (main.js)
     "menu.about": ["Über Flowplan", "About Flowplan", "À propos de Flowplan"],
     "menu.checkUpdates": ["Nach Updates suchen …", "Check for Updates…", "Rechercher des mises à jour…"],
-    "menu.changeServer": ["Server wechseln …", "Change Server…", "Changer de serveur…"],
+    "menu.profiles": ["Profile", "Profiles", "Profils"],
+    "menu.nextProfile": ["Nächstes Profil", "Next Profile", "Profil suivant"],
+    "menu.addProfile": ["Profil hinzufügen …", "Add Profile…", "Ajouter un profil…"],
+    "menu.manageProfiles": ["Profile verwalten …", "Manage Profiles…", "Gérer les profils…"],
     "menu.hide": ["Flowplan ausblenden", "Hide Flowplan", "Masquer Flowplan"],
     "menu.hideOthers": ["Andere ausblenden", "Hide Others", "Masquer les autres"],
     "menu.unhide": ["Alle einblenden", "Show All", "Tout afficher"],
@@ -103,11 +106,33 @@
     // Setup page (pages/setup.html)
     "setup.title": ["Flowplan einrichten", "Set up Flowplan", "Configurer Flowplan"],
     "setup.heading": ["Willkommen bei Flowplan", "Welcome to Flowplan", "Bienvenue dans Flowplan"],
-    "setup.text": ["Verbinde dich mit app.flowplan.org oder gib die Adresse deiner eigenen Flowplan-Instanz ein. Du kannst sie später im Menü unter „Server wechseln“ ändern.", "Connect to app.flowplan.org or enter the address of your own Flowplan instance. You can change it later in the menu under “Change Server”.", "Connectez-vous à app.flowplan.org ou saisissez l'adresse de votre propre instance Flowplan. Vous pourrez la modifier plus tard dans le menu « Changer de serveur »."],
+    "setup.text": ["Verbinde dich mit app.flowplan.org oder gib die Adresse deiner eigenen Flowplan-Instanz ein. Weitere Instanzen fügst du später im Menü unter „Profile“ hinzu.", "Connect to app.flowplan.org or enter the address of your own Flowplan instance. You can add more instances later in the menu under “Profiles”.", "Connectez-vous à app.flowplan.org ou saisissez l'adresse de votre propre instance Flowplan. Vous pourrez ajouter d'autres instances plus tard dans le menu « Profils »."],
     "setup.label": ["Adresse der Instanz", "Address of the instance", "Adresse de l'instance"],
     "setup.placeholder": ["flowplan.deine-firma.de", "flowplan.your-company.com", "flowplan.votre-entreprise.fr"],
     "setup.connect": ["Verbinden", "Connect", "Se connecter"],
     "setup.connecting": ["Verbinde …", "Connecting…", "Connexion…"],
+    "setup.nameLabel": ["Name des Profils (optional)", "Name of the profile (optional)", "Nom du profil (facultatif)"],
+    "setup.namePlaceholder": ["Arbeit", "Work", "Travail"],
+    "setup.cancel": ["Abbrechen", "Cancel", "Annuler"],
+    "setup.addTitle": ["Profil hinzufügen", "Add profile", "Ajouter un profil"],
+    "setup.addHeading": ["Weitere Instanz hinzufügen", "Add another instance", "Ajouter une autre instance"],
+    "setup.addText": ["Jedes Profil hat seine eigene Anmeldung und seine eigenen Offline-Daten. Wechseln kannst du im Menü unter „Profile“.", "Each profile has its own sign-in and its own offline data. Switch between them in the menu under “Profiles”.", "Chaque profil a sa propre connexion et ses propres données hors ligne. Changez de profil dans le menu « Profils »."],
+    "setup.add": ["Hinzufügen", "Add", "Ajouter"],
+
+    // Profiles (main.js, pages/profiles.html)
+    "profiles.title": ["Profile", "Profiles", "Profils"],
+    "profiles.text": ["Jedes Profil ist eine Flowplan-Instanz mit eigener Anmeldung. Wechseln kannst du im Menü oder mit {0}.", "Each profile is a Flowplan instance with its own sign-in. Switch in the menu or with {0}.", "Chaque profil est une instance Flowplan avec sa propre connexion. Changez de profil dans le menu ou avec {0}."],
+    "profiles.nameLabel": ["Name des Profils", "Name of the profile", "Nom du profil"],
+    "profiles.active": ["Aktiv", "Active", "Actif"],
+    "profiles.open": ["Öffnen", "Open", "Ouvrir"],
+    "profiles.add": ["Profil hinzufügen", "Add profile", "Ajouter un profil"],
+    "profiles.back": ["Zurück", "Back", "Retour"],
+    "profiles.remove": ["Entfernen", "Remove", "Supprimer"],
+    "profiles.cancel": ["Abbrechen", "Cancel", "Annuler"],
+    "profiles.removeConfirm": ["Profil „{0}“ entfernen?", "Remove the profile “{0}”?", "Supprimer le profil « {0} » ?"],
+    "profiles.removeDetail": ["Die App meldet sich bei {0} ab und löscht, was dieses Profil auf diesem Computer gespeichert hat (Anmeldung, Offline-Kopie). Deine Daten bleiben auf dem Server.", "The app signs out of {0} and deletes what this profile stored on this computer (sign-in, offline copy). Your data stays on the server.", "L'application se déconnecte de {0} et supprime ce que ce profil a enregistré sur cet ordinateur (connexion, copie hors ligne). Vos données restent sur le serveur."],
+    "profiles.tooMany": ["Höchstens {0} Profile.", "At most {0} profiles.", "{0} profils au maximum."],
+    "profiles.openProfile": ["Flowplan mit dem Profil „{0}“ öffnen", "Open Flowplan with the profile “{0}”", "Ouvrir Flowplan avec le profil « {0} »"],
 
     // Offline page (pages/offline.html)
     "offline.title": ["Keine Verbindung", "No connection", "Pas de connexion"],
@@ -116,7 +141,7 @@
     "offline.detail": ["{0} ist gerade nicht erreichbar ({1}). Prüfe deine Internetverbindung oder die Adresse der Instanz.", "{0} cannot be reached right now ({1}). Check your internet connection or the address of the instance.", "{0} est inaccessible pour le moment ({1}). Vérifiez votre connexion Internet ou l'adresse de l'instance."],
     "offline.unknownError": ["unbekannter Fehler", "unknown error", "erreur inconnue"],
     "offline.retry": ["Erneut versuchen", "Try again", "Réessayer"],
-    "offline.changeServer": ["Server wechseln", "Change server", "Changer de serveur"],
+    "offline.profiles": ["Profile", "Profiles", "Profils"],
   };
 
   let current = FALLBACK;

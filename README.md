@@ -10,7 +10,7 @@
 
 </div>
 
-A slim [Electron](https://www.electronjs.org/) window around a Flowplan instance – like the desktop apps of Notion or Slack. All data stays on the server; the app remembers the address and the window, has native menus (in German, English or French, following the system language), opens links to other sites in the default browser, shows its own page without a connection and updates itself. Voice notes work: the instance may use the microphone (never the camera or the screen). Offline use, notifications and keyboard shortcuts of the web app work unchanged: with **Settings → Data → Offline use** switched on in the app, it opens the stored copy from the instance's service worker without a connection, and its own offline page only appears when there is no copy ([`fallback.js`](fallback.js)).
+A slim [Electron](https://www.electronjs.org/) window around a Flowplan instance – like the desktop apps of Notion or Slack. All data stays on the server; the app remembers the addresses (several instances as [profiles](#profiles)) and the window, has native menus (in German, English or French, following the system language), opens links to other sites in the default browser, shows its own page without a connection and updates itself. Voice notes work: the instance may use the microphone (never the camera or the screen). Offline use, notifications and keyboard shortcuts of the web app work unchanged: with **Settings → Data → Offline use** switched on in the app, it opens the stored copy from the instance's service worker without a connection, and its own offline page only appears when there is no copy ([`fallback.js`](fallback.js)).
 
 Flowplan itself – every new feature – arrives with the server and needs no app update. This app only changes when the window around it does.
 
@@ -24,11 +24,25 @@ Flowplan itself – every new feature – arrives with the server and needs no a
 | Windows 10 or newer | `Flowplan-<version>-windows-setup.exe`, or the `.zip` without installing | x64 and ARM in one installer |
 | Linux | `Flowplan-<version>-linux-<arch>.AppImage`, or the `.tar.gz` | x64 and ARM |
 
-On first start the app always asks for the address of the Flowplan instance, suggesting `https://app.flowplan.org` (HTTPS; `http://localhost` for local tests). Change it via the menu **Server wechseln …**. Managed installations suggest their own address with `--server=<URL>` or the environment variable `FLOWPLAN_SERVER`; the first start still shows it for confirmation.
+On first start the app always asks for the address of the Flowplan instance, suggesting `https://app.flowplan.org` (HTTPS; `http://localhost` for local tests). More instances are added as profiles (below). Managed installations suggest their own address with `--server=<URL>` or the environment variable `FLOWPLAN_SERVER`; the first start still shows it for confirmation.
 
 The app only accepts a real Flowplan instance: its health check (`/api/health`) must answer as Flowplan, and the address must not redirect to another site. The setup page tells apart an address that cannot be reached, a proxy or VPN that asks for a sign-in first (HTTP 401/403), a server error, a web page that is something else and a server without Flowplan.
 
-Only the app's own pages (setup, offline, sign-in) can talk to the app: the bridge `window.flowplanDesktop` exists on `file:` pages alone, every call is checked against the page it comes from ([`guards.js`](guards.js)), and only the instance itself, its sign-in and the identity provider it hands over to may open inside the window – any other address goes to the browser, even one that merely contains `/api/auth/`.
+Only the app's own pages (setup, profiles, offline, sign-in) can talk to the app: the bridge `window.flowplanDesktop` exists on `file:` pages alone, every call is checked against the page it comes from ([`guards.js`](guards.js)), and only the active profile's instance, its sign-in and the identity provider it hands over to may open inside the window – any other address goes to the browser, even one that merely contains `/api/auth/` or belongs to another profile.
+
+## Profiles
+
+The app can keep several instances, for example **Work – flowplan.company.com** and **Private – notes.example** ([`profiles.js`](profiles.js)):
+
+| | |
+| --- | --- |
+| **Switch** | Menu **Profile** / **Profiles** (in the *Flowplan* menu on macOS, under *File* on Windows and Linux), **Nächstes Profil** / **Next Profile** with ⇧⌘P or Ctrl+Shift+P, the Dock menu on macOS, the jump list on Windows, or `--profile=<id or name>` on the command line (Linux launchers, scripts). |
+| **Add** | **Profil hinzufügen …** / **Add Profile…**: address and an optional name (default: the host). The address is checked like on first start. Two profiles may point to the same instance, e.g. for two accounts. |
+| **Rename, remove** | **Profile verwalten …** / **Manage Profiles…**, also reachable from the offline page. Removing asks first, signs out of the instance and deletes everything the profile stored on this computer. |
+
+Each profile has its **own Electron session** (partition `persist:profile-<id>`): cookies, the service worker's offline copy, IndexedDB and caches never mix, not even for two profiles on the same instance. A sign-in through the browser that was started in one profile is dropped when you switch, the window only lets the active profile's instance (and its identity provider) in, and permissions are granted only to the instance of the profile that owns the session. With more than one profile the window title names the active one.
+
+`config.json` keeps `profiles` and `activeProfile`. The single address of version 1.0.4 and older becomes the first profile automatically and keeps the default session, so you stay signed in and the offline copy remains; `server` still mirrors the active profile for older versions. Everything read from the file is checked again: only `http(s)` origins, plain ids, and the session is derived from the id, never taken from the file.
 
 While the apps are not signed and notarized, macOS blocks the first launch: from macOS 15 allow it under **System Settings → Privacy & Security → Open Anyway** (up to macOS 14, right-click → **Open** is enough); if macOS says the app is "damaged", `xattr -dr com.apple.quarantine /Applications/Flowplan.app` removes the quarantine flag. Signing and notarization (below) make this go away. Windows shows SmartScreen (**More info → Run anyway**), and AppImages need to be made executable (`chmod +x Flowplan-*.AppImage`).
 
@@ -102,7 +116,7 @@ Windows has the same with SmartScreen: a code signing certificate (`WIN_CSC_LINK
 
 If a build fails, run the workflow again with **rebuild** set to the version (e.g. `1.0.1`): it builds that version again and completes its draft release instead of raising the version.
 
-Installed apps find the new version within six hours; the download page offers it right away. CI (`ci.yml`) checks every push with a syntax check, the tests without a network (`test:security`, and `test:offline` under `xvfb-run` where it is installed), that the installed Electron is one of the three majors Electron still patches (anything older than `latest − 2` fails) and a Linux test build. CI jobs run on the self-hosted runner, Dependabot and pull requests from forks on GitHub's runners; the release workflow is dispatched by maintainers only and runs on the self-hosted runner.
+Installed apps find the new version within six hours; the download page offers it right away. CI (`ci.yml`) checks every push with a syntax check, the tests without a network (`test:security`, and `test:offline` and `test:profiles` under `xvfb-run` where it is installed), that the installed Electron is one of the three majors Electron still patches (anything older than `latest − 2` fails) and a Linux test build. CI jobs run on the self-hosted runner, Dependabot and pull requests from forks on GitHub's runners; the release workflow is dispatched by maintainers only and runs on the self-hosted runner.
 
 ## Development
 
@@ -112,8 +126,9 @@ Node.js 22 or newer.
 npm ci
 npm start                  # the app against any instance
 npm run check              # syntax check
-npm test                   # security guards (Node only) and offline use (Linux without a display: xvfb-run -a npm test)
-npm run test:security      # guards alone: bridge, navigation, permissions, update source, health check, languages
+npm test                   # security guards (Node only), offline use and profiles (Linux without a display: xvfb-run -a npm test)
+npm run test:security      # guards alone: bridge, navigation, profiles, permissions, update source, health check, languages
+npm run test:profiles      # profiles in the running app (Electron; xvfb-run on Linux without a display)
 npm run dist:mac           # DMG and ZIP (universal), only on macOS
 npm run dist:win           # installer and ZIP (x64 and ARM)
 npm run dist:linux         # AppImage and tar.gz (x64 and ARM)
@@ -128,7 +143,7 @@ FLOWPLAN_APP="$PWD/dist/mac-arm64/Flowplan.app/Contents/MacOS/Flowplan" npm run 
 FLOWPLAN_APP="$PWD/dist/mac-arm64/Flowplan.app/Contents/MacOS/Flowplan" npm run test:offline
 ```
 
-`test:security` ([`test/security.mjs`](test/security.mjs), Node alone, no network) checks the guards: the bridge is absent on anything but the app's own pages, `https://evil.example/api/auth/x` opens in the browser while `<server>/api/auth/x` stays in the window, only the microphone alone is granted, `http://` update sources are refused, the health check's verdicts and that every string exists in all three languages. `test:smoke` checks setup, loading, the offline page, a suggested address, that other servers are refused and the sign-in through the browser (the latter with the development sign-in of a local instance); `test:update` offers the app a newer version from a local source and checks that it is found and offered; `test:offline` (with `test:security` also `npm test`, no instance needed) checks that the window offers what offline use needs, that the instance has no bridge, and that without a connection the copy stored by the service worker opens – also after a failed page of the instance – and the offline page only without a copy.
+`test:security` ([`test/security.mjs`](test/security.mjs), Node alone, no network) checks the guards: the bridge is absent on anything but the app's own pages, `https://evil.example/api/auth/x` opens in the browser while `<server>/api/auth/x` stays in the window, another profile's instance stays out of the window, every profile has its own session and `config.json` cannot pick one, only the microphone alone is granted, `http://` update sources are refused, the health check's verdicts and that every string exists in all three languages. `test:smoke` checks setup, loading, the offline page, a suggested address, that other servers are refused and the sign-in through the browser (the latter with the development sign-in of a local instance); `test:update` offers the app a newer version from a local source and checks that it is found and offered; `test:offline` (with `test:security` also `npm test`, no instance needed) checks that the window offers what offline use needs, that the instance has no bridge, and that without a connection the copy stored by the service worker opens – also after a failed page of the instance – and the offline page only without a copy. `test:profiles` checks with two stand-in instances that an old single address becomes the first profile, that new profiles – also a second one on the same instance – see none of the other profiles' cookies, switching from the menu, that another profile's address goes to the browser, renaming and removing (its session is emptied) and `--profile=<id>`.
 
 The app's own words live in [`strings.js`](strings.js) (German, English, French; English for other languages), chosen by `app.getLocale()`; the pages in `pages/` get the language in their address and fill `data-i18n` attributes.
 

@@ -9,13 +9,16 @@
   <body>
     <main>
       <img src="../build/icon.png" alt="" />
-      <h1 data-i18n="setup.heading">Welcome to Flowplan</h1>
-      <p data-i18n="setup.text">Connect to app.flowplan.org or enter the address of your own Flowplan instance. You can change it later in the menu under “Change Server”.</p>
+      <h1 id="heading" data-i18n="setup.heading">Welcome to Flowplan</h1>
+      <p id="text" data-i18n="setup.text">Connect to app.flowplan.org or enter the address of your own Flowplan instance. You can add more instances later in the menu under “Profiles”.</p>
       <form id="form">
         <label for="server" data-i18n="setup.label">Address of the instance</label>
         <input id="server" name="server" placeholder="flowplan.your-company.com" data-i18n-placeholder="setup.placeholder" autocomplete="url" autofocus required />
+        <label for="name" data-i18n="setup.nameLabel">Name of the profile (optional)</label>
+        <input id="name" name="name" placeholder="Work" data-i18n-placeholder="setup.namePlaceholder" autocomplete="off" maxlength="60" />
         <div class="error" id="error" role="alert"></div>
         <button id="submit" data-i18n="setup.connect">Connect</button>
+        <button id="cancel" type="button" class="secondary" hidden data-i18n="setup.cancel">Cancel</button>
       </form>
     </main>
     <script src="../strings.js"></script>

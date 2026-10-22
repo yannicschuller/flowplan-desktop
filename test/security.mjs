@@ -1,4 +1,4 @@
-// What the window lets through (guards.js, strings.js, updates.js), checked
+// What the window lets through (guards.js, profiles.js, strings.js, updates.js), checked
 // with Node alone – no Electron, no network. Usage: node test/security.mjs
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
@@ -9,6 +9,7 @@ import { pathToFileURL } from "node:url";
 const require = createRequire(import.meta.url);
 const root = new URL("..", import.meta.url).pathname;
 const guards = require("../guards.js");
+const profiles = require("../profiles.js");
 const strings = require("../strings.js");
 const { isOwnPage, allowedInWindow, isSignInRedirect, permissionAllowed, updateFeedUrl, classifyHealth } = guards;
 
@@ -21,6 +22,7 @@ const server = "https://flowplan.example.com";
   assert.equal(isOwnPage(page("setup.html"), pagesDir), true);
   assert.equal(isOwnPage(`${page("offline.html")}?server=x&lang=de`, pagesDir), true);
   assert.equal(isOwnPage(page("sign-in.html"), pagesDir), true);
+  assert.equal(isOwnPage(page("profiles.html"), pagesDir), true);
   assert.equal(isOwnPage(`${server}/`, pagesDir), false, "the instance has no bridge");
   assert.equal(isOwnPage(`${server}/pages/setup.html`, pagesDir), false);
   assert.equal(isOwnPage("https://evil.example/file:///x/pages/setup.html", pagesDir), false);
@@ -62,6 +64,103 @@ const server = "https://flowplan.example.com";
   assert.equal(isSignInRedirect(`${server}/share/x`, server), false);
   assert.equal(isSignInRedirect("https://evil.example/api/auth/login", server), false);
   console.log("✔ Navigation im Fenster");
+}
+
+// E14: profiles – one session per profile, only the active profile's
+// instance in the window, nothing from config.json trusted unchecked.
+{
+  const work = "https://flowplan.company.example";
+  const own = "https://notes.example";
+  // An older config with one address becomes the first profile and keeps the
+  // default session (its sign-in and offline copy stay).
+  const migrated = profiles.loadProfiles({ server: work, window: { width: 900 } });
+  assert.deepEqual(migrated, { profiles: [{ id: "main", name: "flowplan.company.example", server: work, legacy: true }], activeProfile: "main" });
+  assert.equal(profiles.partitionFor(migrated.profiles[0]), null, "the migrated profile uses the default session");
+  assert.deepEqual(profiles.loadProfiles({}), { profiles: [], activeProfile: null });
+  assert.deepEqual(profiles.loadProfiles({ server: "javascript:alert(1)" }).profiles, [], "only http(s) addresses");
+  assert.deepEqual(profiles.loadProfiles({ server: `${work}/path` }).profiles, [], "only an origin, as saved by the app");
+  // New profiles get their own persistent partition, derived from the id.
+  let state = migrated;
+  let added;
+  ({ state, profile: added } = profiles.addProfile(state, { name: "  Privat\n ", server: own }, "abc123"));
+  assert.equal(added.name, "Privat", "one line, trimmed");
+  assert.equal(state.activeProfile, "abc123", "a new profile becomes active");
+  assert.equal(profiles.partitionFor(added), "persist:profile-abc123");
+  ({ state } = profiles.addProfile(state, { name: "", server: own }, "abc123"));
+  assert.equal(new Set(state.profiles.map((p) => p.id)).size, 3, "ids stay unique");
+  assert.equal(state.profiles[2].name, "notes.example", "no name: the host");
+  const partitions = state.profiles.map((p) => profiles.partitionFor(p));
+  assert.equal(new Set(partitions).size, partitions.length, "no two profiles share a session – also on the same instance");
+  // config.json is checked again: a partition or legacy flag cannot be
+  // smuggled in, ids are plain, and only one profile owns the default session.
+  const loaded = profiles.loadProfiles({
+    profiles: [
+      { id: "a1", name: "A", server: work, legacy: true },
+      { id: "b2", name: "B", server: own, legacy: true, partition: "persist:profile-a1" },
+      { id: "../x", name: "C", server: own },
+      { id: "a1", name: "Duplicate", server: own },
+      { id: "c3", name: "D", server: "file:///etc/passwd" },
+      { id: "d4", name: "E\u0000\u2028x", server: own },
+      null,
+    ],
+    activeProfile: "nope",
+  });
+  assert.deepEqual(loaded.profiles.map((p) => p.id), ["a1", "b2", "d4"]);
+  assert.equal(profiles.partitionFor(loaded.profiles[0]), null);
+  assert.equal(profiles.partitionFor(loaded.profiles[1]), "persist:profile-b2", "the partition comes from the id, not the file");
+  assert.equal(loaded.profiles[2].name, "E x", "no control characters in menus");
+  assert.equal(loaded.activeProfile, "a1", "an unknown active profile falls back to the first");
+  assert.throws(() => profiles.partitionFor({ id: "../../x" }));
+  assert.throws(() => profiles.addProfile(state, { name: "x", server: "file:///etc/passwd" }));
+  assert.equal(profiles.cleanName("x".repeat(500), own).length, 60);
+  // Navigation stays with the active profile's instance: the other profile's
+  // address – and its identity provider – go to the browser.
+  const active = profiles.activeOf(state);
+  const optionsFor = (profile, hosts = new Set()) => ({ server: profile.server, pagesDir, identityHosts: hosts });
+  const workHosts = new Set(["login.idp.example"]);
+  assert.equal(allowedInWindow(`${own}/x`, optionsFor(active)), true);
+  assert.equal(allowedInWindow(`${work}/x`, optionsFor(active)), false, "another profile's instance is not in this window");
+  assert.equal(allowedInWindow("https://login.idp.example/authorize", optionsFor(active)), false, "identity hosts stay with their profile");
+  assert.equal(allowedInWindow("https://login.idp.example/authorize", optionsFor(migrated.profiles[0], workHosts)), true);
+  assert.equal(permissionAllowed("notifications", {}, false), false, "a session outside its active profile gets no permissions");
+  // Switching, removing and the command line only reach saved profiles.
+  assert.equal(profiles.nextProfile(state).id, "main", "next wraps around");
+  assert.equal(profiles.profileFromArgs(state, ["app", "--profile=abc123"]).id, "abc123");
+  assert.equal(profiles.profileFromArgs(state, ["app", "--profile=privat"]).id, "abc123", "by name too");
+  assert.equal(profiles.profileFromArgs(state, ["app", `--profile=${own}`]), null, "never a new address");
+  assert.equal(profiles.profileFromArgs(state, ["app"]), null);
+  const removedId = state.activeProfile;
+  const removed = profiles.removeProfile(state, removedId);
+  assert.equal(removed.profiles.length, 2);
+  assert.equal(removed.activeProfile, "abc123", "the active one moves to its neighbour");
+  assert.ok(!removed.profiles.some((p) => p.id === removedId));
+  assert.deepEqual(profiles.removeProfile({ profiles: [added], activeProfile: added.id }, added.id), { profiles: [], activeProfile: null });
+  assert.throws(() => profiles.renameProfile(state, "unknown", "x"));
+  assert.equal(profiles.renameProfile(state, "main", "Arbeit").profiles[0].name, "Arbeit");
+  // What is written back: no unknown fields, the active address mirrored
+  // for older versions.
+  assert.deepEqual(profiles.toConfig(loaded), {
+    profiles: [
+      { id: "a1", name: "A", server: work, legacy: true },
+      { id: "b2", name: "B", server: own },
+      { id: "d4", name: "E x", server: own },
+    ],
+    activeProfile: "a1",
+    server: work,
+  });
+  assert.equal(profiles.profileLabel({ name: "Arbeit", server: work }), "Arbeit – flowplan.company.example");
+  // main.js: every window gets the partition of its profile, navigation and
+  // permissions ask the window's profile, a switch forgets pending sign-ins,
+  // and the profile channels go through the guarded handle() like the rest.
+  const main = readFileSync(join(root, "main.js"), "utf8");
+  assert.match(main, /partition \? \{ partition \} : \{\}/);
+  assert.match(main, /allowedInWindow\(url, \{ server: origin\(\)/);
+  assert.match(main, /owner\.id === state\.activeProfile && sameOriginAs\(wc\.getURL\(\), owner\.server\)/);
+  assert.match(main, /signIn\.reset\(\)/);
+  for (const channel of ["get-profiles", "add-profile", "rename-profile", "remove-profile", "switch-profile", "show-profiles", "new-profile"])
+    assert.match(main, new RegExp(`handle\\("flowplan:${channel}"`), channel);
+  assert.doesNotMatch(main, /flowplan:set-server/, "addresses only come in as checked profiles");
+  console.log("✔ Profile getrennt");
 }
 
 // E3: permissions of the instance.
@@ -130,14 +229,17 @@ const server = "https://flowplan.example.com";
   }
   strings.setLocale("de");
   assert.equal(strings.t("menu.checkUpdates"), "Nach Updates suchen …");
+  assert.equal(strings.t("menu.nextProfile"), "Nächstes Profil");
+  assert.equal(strings.t("profiles.removeConfirm", "Arbeit"), "Profil „Arbeit“ entfernen?");
   assert.equal(strings.t("updates.available", "1.2.3"), "Flowplan 1.2.3 ist verfügbar");
   strings.setLocale("fr");
   assert.equal(strings.t("setup.connect"), "Se connecter");
+  assert.equal(strings.t("menu.manageProfiles"), "Gérer les profils…");
   strings.setLocale("xx");
   assert.equal(strings.t("setup.connect"), "Connect");
   assert.equal(strings.t("missing.key"), "missing.key");
   // The pages ask only for words that exist.
-  for (const name of ["setup.html", "offline.html", "sign-in.html"]) {
+  for (const name of ["setup.html", "offline.html", "sign-in.html", "profiles.html"]) {
     const html = readFileSync(join(pagesDir, name), "utf8");
     for (const [, key] of html.matchAll(/data-i18n(?:-\w+)?="([^"]+)"/g)) assert.ok(strings.STRINGS[key], `${name}: ${key}`);
     assert.match(html, /script-src 'self'/, `${name}: CSP without inline scripts`);
@@ -150,5 +252,6 @@ const server = "https://flowplan.example.com";
   const ci = readFileSync(join(root, ".github", "workflows", "ci.yml"), "utf8");
   assert.match(ci, /dist-tags\.latest/, "CI compares with the latest Electron");
   assert.match(ci, /test:security/, "CI runs this test");
+  assert.match(ci, /test:profiles/, "CI runs the profiles test");
   console.log("✔ CI prüft Electron und Tests");
 }
