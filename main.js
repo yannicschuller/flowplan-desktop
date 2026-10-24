@@ -25,6 +25,7 @@ const { isOwnPage, isInstancePage, allowedInWindow, isSignInRedirect, permission
 const profiles = require("./profiles");
 const { setupNotifier } = require("./notifier");
 const notificationRules = require("./notifications");
+const { setupHandoff } = require("./handoff");
 const fs = require("node:fs");
 
 const { t } = strings;
@@ -261,6 +262,7 @@ function createWindow(profile = activeProfile(), target) {
     if (fallbackFor(url, origin()) === "start") return void w.loadURL(origin()).catch(() => {});
     loadPage("offline.html", { server: origin() || "", error: description || String(code) });
   });
+  handoff.track(w, origin);
   openServer(target);
   return w;
 }
@@ -312,6 +314,15 @@ function openFromNotification(id, url) {
   const next = win && !win.isDestroyed() ? replaceWindow(profile, target) : createWindow(profile, target);
   next.once("ready-to-show", () => next.focus());
 }
+// Handoff (macOS, handoff.js): the window offers its page to the iPad and
+// iPhone; their pages open here like a clicked notification – on the profile
+// of their instance, at an address of that instance only.
+const handoff = setupHandoff({
+  app,
+  profiles: () => state.profiles,
+  open: openFromNotification,
+  openExternal: (url) => void shell.openExternal(url),
+});
 // The window's profile while it is in front: its notifications show in the
 // inbox there, so no system notification pops up for them.
 function focusedProfile() {
@@ -640,6 +651,7 @@ else {
     });
     refreshProfileMenus();
     createWindow();
+    handoff.ready();
     notifier.start();
     signIn.ready();
     setupUpdates();

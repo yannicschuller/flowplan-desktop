@@ -61,6 +61,12 @@ Flowplan delivers system notifications through Web Push, which Electron does not
 
 Windows and Linux keep their behaviour: closing the window quits the app, so notifications arrive while it runs (minimised is fine). A tray icon would keep it running without a window, but behaves differently on every Linux desktop and changes what closing means – left out on purpose. On Windows, notifications need the app's id (`app.flowplan.desktop`), which the installer gives its shortcut; the ZIP without installing may show none. `FLOWPLAN_NOTIFICATION_INTERVAL=<seconds>` (at least 2) scales every wait, for tests and managed installations.
 
+## Handoff (macOS)
+
+The window offers the page it shows to your iPad and iPhone (and other Macs) – same Apple Account, Handoff on in the system settings: the Flowplan icon in the iPad's Dock or app switcher opens the page in the Flowplan app, without the app the device's browser opens it. The other way round, a page open in the iPad or iPhone app appears on the Mac's Dock and opens here – in the profile of its instance (the window switches profile like a clicked notification); pages of an instance without a profile open in the browser. Only pages of the profile's own instance are offered, never the app's own pages or `/api/` addresses ([`handoff.js`](handoff.js), activity type `app.flowplan.page`, declared under `NSUserActivityTypes` in `package.json` → `build.mac.extendInfo`).
+
+Handoff works only between apps of the **same Apple Developer team**: the signed releases (Developer ID of team `V7N2K54KJN`, the team of the iOS app) – not `npm start` or unsigned builds. Should macOS not offer the app's pages although both are signed, add a Developer ID provisioning profile for `app.flowplan.desktop` (`mac.provisioningProfile`) and the entitlements `com.apple.application-identifier` = `V7N2K54KJN.app.flowplan.desktop` and `com.apple.developer.team-identifier` = `V7N2K54KJN` to `build/entitlements.mac.plist`.
+
 ## Signing in with passkeys and SSO
 
 Passkeys (iCloud Keychain, Windows Hello, password managers) and identity providers that ask for one only work in a real browser. In the app, **Mit Passkey anmelden** and **Mit SSO anmelden** therefore open the sign-in in the default browser:
