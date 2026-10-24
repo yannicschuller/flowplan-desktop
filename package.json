@@ -1,7 +1,7 @@
 {
   "name": "flowplan-desktop",
   "productName": "Flowplan",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Flowplan as a desktop app for macOS, Windows and Linux",
   "main": "main.js",
   "private": true,
