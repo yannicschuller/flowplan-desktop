@@ -9,12 +9,13 @@
   "license": "AGPL-3.0-only",
   "scripts": {
     "start": "electron .",
-    "check": "node --check main.js && node --check preload.js && node --check updates.js && node --check sign-in.js && node --check fallback.js && node --check guards.js && node --check profiles.js && node --check notifications.js && node --check notifier.js && node --check strings.js && node --check pages/setup.js && node --check pages/offline.js && node --check pages/sign-in-page.js && node --check pages/profiles-page.js && node --check pages/i18n.js && node --check test/security.mjs && node --check test/update.mjs && node --check test/offline.mjs && node --check test/smoke.mjs && node --check test/profiles.mjs && node --check test/notifications.mjs",
-    "test": "node test/security.mjs && node test/offline.mjs && node test/profiles.mjs && node test/notifications.mjs",
+    "check": "node --check main.js && node --check preload.js && node --check updates.js && node --check sign-in.js && node --check fallback.js && node --check guards.js && node --check profiles.js && node --check notifications.js && node --check notifier.js && node --check strings.js && node --check handoff.js && node --check pages/setup.js && node --check pages/offline.js && node --check pages/sign-in-page.js && node --check pages/profiles-page.js && node --check pages/i18n.js && node --check test/security.mjs && node --check test/update.mjs && node --check test/offline.mjs && node --check test/smoke.mjs && node --check test/profiles.mjs && node --check test/notifications.mjs && node --check test/handoff.mjs",
+    "test": "node test/security.mjs && node test/offline.mjs && node test/profiles.mjs && node test/notifications.mjs && node test/handoff.mjs",
     "test:security": "node test/security.mjs",
     "test:offline": "node test/offline.mjs",
     "test:profiles": "node test/profiles.mjs",
     "test:notifications": "node test/notifications.mjs",
+    "test:handoff": "node test/handoff.mjs",
     "test:smoke": "node test/smoke.mjs",
     "test:update": "node test/update.mjs",
     "dist": "electron-builder --publish never",
@@ -47,6 +48,7 @@
       "notifications.js",
       "notifier.js",
       "strings.js",
+      "handoff.js",
       "pages/**",
       "build/icon.png",
       "build/update.json",
@@ -81,7 +83,10 @@
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": {
-        "NSMicrophoneUsageDescription": "Flowplan uses the microphone for voice notes."
+        "NSMicrophoneUsageDescription": "Flowplan uses the microphone for voice notes.",
+        "NSUserActivityTypes": [
+          "app.flowplan.page"
+        ]
       }
     },
     "dmg": {
