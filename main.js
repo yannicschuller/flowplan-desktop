@@ -9,10 +9,13 @@
 // menu bar icon (tray.js), flowplan:// links to pages (deep-links.js), pages
 // in windows of their own (page-windows.js), files dropped on the app
 // (files.js), launch at login (autostart.js), printing and PDFs (print.js)
-// and the settings for all of it (settings.js, pages/settings.html). What
-// the app asks an instance itself goes through instance-api.js with the
-// profile's own session. Its own words come in the system language
-// (strings.js); what the window lets through is decided in guards.js.
+// and the settings for all of it (settings.js, pages/settings.html). On a
+// Mac with Apple Intelligence the instance may use Apple's on-device model
+// (device-ai.js, device-ai-rules.js, native/device-ai) – optional, off with
+// one switch in the settings. What the app asks an instance itself goes
+// through instance-api.js with the profile's own session. Its own words come
+// in the system language (strings.js); what the window lets through is
+// decided in guards.js.
 const {
   app,
   BrowserWindow,
@@ -46,6 +49,8 @@ const pageWindowRules = require("./page-windows");
 const fileRules = require("./files");
 const autostart = require("./autostart");
 const printing = require("./print");
+const deviceAiRules = require("./device-ai-rules");
+const { createDeviceAi } = require("./device-ai");
 const fs = require("node:fs");
 
 const { t } = strings;
@@ -583,6 +588,7 @@ function publicSettings(extra = {}) {
     shortcutLabel: appSettings.shortcutLabel(settings().captureShortcut),
     platform: process.platform,
     version: app.getVersion(),
+    deviceAiSupported: !!aiHelper,
     ...extra,
   };
 }
@@ -600,6 +606,8 @@ function changeSettings(patch) {
   if (next.launchAtLogin !== before.launchAtLogin || next.startHidden !== before.startHidden) applyLoginItem(next);
   if (next.spellLanguages.join() !== before.spellLanguages.join())
     for (const ses of preparedSessions) ses.setSpellCheckerLanguages?.(next.spellLanguages);
+  // Off: the helper goes at once; pages loaded from now on have no bridge.
+  if (!next.deviceAi) aiInstance?.stop();
   buildMenu();
   tray?.refresh();
   app.emit("flowplan-settings", next);
@@ -610,6 +618,73 @@ function applyLoginItem(value) {
     autostart.apply(value, { app });
   } catch (e) {
     console.warn(`autostart: ${e.message}`);
+  }
+}
+
+// ---- Apple's on-device model (device-ai.js) ----
+
+// The helper of the macOS build (Contents/MacOS/device-ai), or a
+// stand-in outside the packaged app (device-ai-rules.helperCommand). Without
+// one – Windows, Linux, a Mac build without it – window.FlowplanDesktop.ai
+// does not exist. With the setting off nothing is started and the bridge is
+// missing too; the helper only starts when a page asks.
+const aiHelper = deviceAiRules.helperCommand({
+  platform: process.platform,
+  packaged: app.isPackaged,
+  appDir: __dirname,
+  env: process.env,
+  execPath: process.execPath,
+  exists: (file) => fs.existsSync(file),
+});
+let aiInstance = null;
+function aiEnabled() {
+  return !!aiHelper && settings().deviceAi;
+}
+function aiService() {
+  if (!aiEnabled()) return null;
+  if (!aiInstance) aiInstance = createDeviceAi({ ...aiHelper, onEvent: (name, detail) => app.emit("flowplan-device-ai", { name, ...detail }) });
+  return aiInstance;
+}
+// Answers cross the bridge as { value } or { error: { code, message } }:
+// preload.js turns the latter into an Error with its code.
+function aiFailure(error) {
+  const code = deviceAiRules.ERROR_CODES.includes(error?.code) ? error.code : "error";
+  const text = t(`ai.error.${code}`);
+  return { error: { code, message: error?.detail && error.detail !== code ? `${text} (${error.detail})` : text } };
+}
+async function aiAvailability() {
+  const ai = aiService();
+  return ai ? ai.availability() : { available: false };
+}
+// A request of a page: its chunks go to the frame that asked, and it ends
+// when that page goes away or loads another document. The answer of a
+// stream says how many chunks were sent: they travel apart from it, and
+// the preload waits for them before it resolves.
+async function aiRequest(event, kind, input) {
+  const ai = aiService();
+  if (!ai) return aiFailure({ code: "unavailable" });
+  const contents = event.sender;
+  const frame = event.senderFrame;
+  const owner = String(contents.id);
+  const pageId = typeof input?.id === "string" ? input.id : "";
+  const gone = () => ai.cancelOwner(owner);
+  contents.once("destroyed", gone);
+  contents.once("did-navigate", gone);
+  let sent = 0;
+  const onChunk = (text) => {
+    try {
+      frame.send("flowplan:ai-chunk", pageId, text);
+      sent++;
+    } catch {}
+  };
+  try {
+    const value = await ai[kind](input, { owner, onChunk: kind === "stream" ? onChunk : undefined });
+    return kind === "stream" ? { value, chunks: sent } : { value };
+  } catch (error) {
+    return aiFailure(error);
+  } finally {
+    contents.removeListener("destroyed", gone);
+    contents.removeListener("did-navigate", gone);
   }
 }
 
@@ -1092,6 +1167,18 @@ handle("flowplan:notifications-refresh", (event) => notifier?.refresh(ownerOf(ev
 handle("flowplan:spelling-add-word", (event, word) => dictionaryWord(word) && event.sender.session.addWordToSpellCheckerDictionary(word), { instance: true });
 handle("flowplan:open-window", (event, url) => void openPageWindow(ownerOf(event.sender.session)?.id, url), { instance: true });
 handle("flowplan:drop-files", (event, paths) => void takeFiles(fileRules.droppedPaths(paths)), { instance: true });
+// Apple's on-device model: whether the bridge exists (asked by the preload,
+// synchronously, before the page runs), then its calls – the instance's
+// main frame only, every request checked again (device-ai-rules.js).
+ipcMain.on("flowplan:ai-present", (event) => {
+  event.returnValue = fromOwnInstance(event) && aiEnabled();
+});
+handle("flowplan:ai-availability", async () => ({ value: await aiAvailability() }), { instance: true });
+handle("flowplan:ai-generate", (event, input) => aiRequest(event, "generate", input), { instance: true });
+handle("flowplan:ai-stream", (event, input) => aiRequest(event, "stream", input), { instance: true });
+handle("flowplan:ai-cancel", (event, id) => void aiInstance?.cancel(String(event.sender.id), String(id ?? "")), { instance: true });
+// The settings page: is the helper there, is it on, what does it say.
+handle("flowplan:ai-status", async () => ({ supported: !!aiHelper, enabled: settings().deviceAi, availability: aiEnabled() ? await aiAvailability() : null }));
 
 // ---- Start ----
 
@@ -1221,7 +1308,10 @@ else {
   app.on("before-quit", () => {
     quitting = true;
   });
-  app.on("will-quit", () => globalShortcut.unregisterAll());
+  app.on("will-quit", () => {
+    globalShortcut.unregisterAll();
+    aiInstance?.stop();
+  });
   app.on("window-all-closed", () => {
     // Windows and Linux: closing the last window quits – unless the tray
     // icon keeps the app (and its notifications and quick capture) running.

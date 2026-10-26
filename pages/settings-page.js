@@ -1,6 +1,7 @@
 // Settings (settings.js): tray icon, launch at login, the quick capture
-// shortcut and the spell checker's languages. Every change is saved at once;
-// main.js checks it again and answers with what now holds.
+// shortcut, the spell checker's languages and – on a Mac build with the
+// helper – Apple Intelligence (device-ai.js, optional). Every change is saved
+// at once; main.js checks it again and answers with what now holds.
 const { t } = window.flowplanStrings;
 const desktop = window.flowplanDesktop;
 const $ = (id) => document.getElementById(id);
@@ -34,6 +35,25 @@ function render(data) {
   status.textContent = messages[data.shortcutStatus] || "";
   status.className = `small shortcut-status ${data.shortcutStatus}`;
   $("version").textContent = t("updates.version", data.version);
+  // Only where the helper exists (the macOS build); the status line asks it.
+  $("device-ai").hidden = !data.deviceAiSupported;
+  $("deviceAi").checked = s.deviceAi;
+  if (data.deviceAiSupported && s.deviceAi !== shownAi) void showAiStatus();
+}
+let shownAi = null;
+async function showAiStatus() {
+  const line = $("device-ai-status");
+  shownAi = current.settings.deviceAi;
+  if (!shownAi) return void (line.textContent = t("settings.deviceAiIsOff"));
+  line.textContent = t("settings.deviceAiChecking");
+  try {
+    const status = await desktop.settings.aiStatus();
+    if (!current.settings.deviceAi) return;
+    const a = status.availability || {};
+    line.textContent = a.available ? t("settings.deviceAiAvailable") : t(`settings.deviceAi.${a.reason || "error"}`);
+  } catch {
+    line.textContent = t("settings.deviceAi.error");
+  }
 }
 async function change(patch) {
   error.textContent = "";
@@ -44,7 +64,7 @@ async function change(patch) {
     if (current) render(current);
   }
 }
-for (const id of ["tray", "launchAtLogin", "startHidden"]) $(id).addEventListener("change", (e) => change({ [id]: e.target.checked }));
+for (const id of ["tray", "launchAtLogin", "startHidden", "deviceAi"]) $(id).addEventListener("change", (e) => change({ [id]: e.target.checked }));
 for (const box of document.querySelectorAll("#languages input"))
   box.addEventListener("change", () => change({ spellLanguages: [...document.querySelectorAll("#languages input:checked")].map((b) => b.value) }));
 

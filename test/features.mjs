@@ -30,7 +30,7 @@ const server = "https://flowplan.example.com";
 
 // Settings: defaults per system, only valid values, unknown keys dropped.
 {
-  assert.deepEqual(settings.settingsOf({}, "darwin"), { tray: true, launchAtLogin: false, startHidden: false, captureShortcut: "CommandOrControl+Shift+Space", spellLanguages: ["de-DE", "en-US", "fr-FR"] });
+  assert.deepEqual(settings.settingsOf({}, "darwin"), { tray: true, launchAtLogin: false, startHidden: false, captureShortcut: "CommandOrControl+Shift+Space", spellLanguages: ["de-DE", "en-US", "fr-FR"], deviceAi: true });
   assert.equal(settings.settingsOf({}, "win32").tray, false, "off on Windows");
   assert.equal(settings.settingsOf({}, "linux").tray, false, "off on Linux");
   const saved = settings.settingsOf({ settings: { tray: "yes", launchAtLogin: true, captureShortcut: "rm -rf", spellLanguages: ["xx", "fr-FR"], partition: "persist:x" } }, "linux");
@@ -39,11 +39,14 @@ const server = "https://flowplan.example.com";
   assert.deepEqual(saved.spellLanguages, ["fr-FR"]);
   assert.ok(!("partition" in saved));
   assert.equal(settings.settingsOf({ settings: { captureShortcut: null } }).captureShortcut, null, "switched off");
+  assert.equal(settings.settingsOf({ settings: { deviceAi: false } }).deviceAi, false, "Apple Intelligence switched off");
+  assert.equal(settings.settingsOf({ settings: { deviceAi: "no" } }).deviceAi, true, "only a boolean switches");
+  assert.equal(settings.applyPatch({}, { deviceAi: false }).deviceAi, false);
   assert.deepEqual(settings.settingsOf({ settings: { spellLanguages: [] } }).spellLanguages, ["de-DE", "en-US", "fr-FR"], "never without a language");
   for (const ok of ["CommandOrControl+Shift+Space", "Alt+Shift+K", "Control+Alt+F12", "Super+Plus", "Ctrl+Shift+1"]) assert.equal(settings.isShortcut(ok), true, ok);
   for (const bad of ["Space", "K", "Shift+K", "Ctrl+", "Ctrl+Ctrl+K", "Hyper+K", "Ctrl+Shift+Space+K", "", null, "Ctrl+" + "K".repeat(80)]) assert.equal(settings.isShortcut(bad), false, String(bad));
   const patched = settings.applyPatch({ settings: { launchAtLogin: true, startHidden: true } }, { launchAtLogin: false, tray: true, evil: 1 }, "linux");
-  assert.deepEqual(patched, { tray: true, launchAtLogin: false, startHidden: false, captureShortcut: settings.DEFAULT_SHORTCUT, spellLanguages: ["de-DE", "en-US", "fr-FR"] }, "hidden only with launch at login");
+  assert.deepEqual(patched, { tray: true, launchAtLogin: false, startHidden: false, captureShortcut: settings.DEFAULT_SHORTCUT, spellLanguages: ["de-DE", "en-US", "fr-FR"], deviceAi: true }, "hidden only with launch at login");
   assert.equal(settings.applyPatch({}, { captureShortcut: "Nope" }).captureShortcut, settings.DEFAULT_SHORTCUT);
   assert.equal(settings.shortcutLabel("CommandOrControl+Shift+Space", "darwin"), "⌘⇧Space");
   assert.equal(settings.shortcutLabel("CommandOrControl+Shift+Space", "win32"), "Ctrl+Shift+Space");

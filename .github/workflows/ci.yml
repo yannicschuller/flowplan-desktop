@@ -39,6 +39,10 @@ jobs:
         # launch at login, printing and the update toast – the decisions, and
         # what the app asks an instance against a local stand-in.
         run: npm run test:features
+      - name: Apple Intelligence (Node only)
+        # The on-device model's bridge: requests checked, the helper process
+        # (a stand-in) started, streamed, cancelled, restarted and stopped.
+        run: npm run test:device-ai
       - name: Electron still supported
         # Electron keeps the latest three majors patched. An installed major
         # older than latest − 2 gets no Chromium security fixes any more.
@@ -78,6 +82,13 @@ jobs:
             xvfb-run -a npm run test:app
           else
             echo "::warning::xvfb-run is not installed on this runner; the app test was skipped."
+          fi
+      - name: Apple Intelligence bridge (Electron under xvfb)
+        run: |
+          if command -v xvfb-run > /dev/null; then
+            xvfb-run -a npm run test:device-ai-app
+          else
+            echo "::warning::xvfb-run is not installed on this runner; the Apple Intelligence app test was skipped."
           fi
       - name: Test build (Linux, unpacked)
         run: npx electron-builder --linux dir --publish never

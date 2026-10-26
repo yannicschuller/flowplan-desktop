@@ -12,8 +12,11 @@
 //   and switch them on or off; the text menu of the editor gets spelling
 //   suggestions (from the spell checker here, nothing leaves the page) and
 //   can add a word to the dictionary; the page menu can open a page of the
-//   instance in a window of its own. Nothing else: the web app runs without
-//   extra rights, and other sites (an identity provider, links) get no bridge.
+//   instance in a window of its own. On a Mac with Apple Intelligence (and
+//   the setting on, device-ai.js) it also has `ai`: Apple's on-device model,
+//   whose prompts and answers never leave the Mac. Nothing else: the web app
+//   runs without extra rights, and other sites (an identity provider, links)
+//   get no bridge.
 //
 // Files dropped on an instance page that the page itself does not take
 // (it calls preventDefault for its own drop zones) go to the app – only real
@@ -47,6 +50,7 @@ if (location.protocol === "file:")
       get: () => ipcRenderer.invoke("flowplan:settings-get"),
       set: (patch) => ipcRenderer.invoke("flowplan:settings-set", patch),
       checkUpdates: () => ipcRenderer.invoke("flowplan:check-updates"),
+      aiStatus: () => ipcRenderer.invoke("flowplan:ai-status"),
     },
     capture: {
       info: () => ipcRenderer.invoke("flowplan:capture-info"),
@@ -60,7 +64,7 @@ if (location.protocol === "file:")
     },
   });
 else if (instance && (location.protocol === "https:" || location.protocol === "http:") && location.origin === instance) {
-  contextBridge.exposeInMainWorld("FlowplanDesktop", {
+  const bridge = {
     platform: "desktop",
     version: argument("flowplan-version"),
     notifications: {
@@ -79,7 +83,83 @@ else if (instance && (location.protocol === "https:" || location.protocol === "h
     },
     // A page of this instance in a window of its own.
     openWindow: (url) => void ipcRenderer.invoke("flowplan:open-window", String(url || "")).catch(() => {}),
-  });
+  };
+  // Apple's on-device model: main.js says whether it is there (a Mac build
+  // with the helper, the setting on, this instance's main frame). Without
+  // it, window.FlowplanDesktop has no `ai` at all.
+  let ai = false;
+  try {
+    ai = ipcRenderer.sendSync("flowplan:ai-present") === true;
+  } catch {}
+  if (!ai) contextBridge.exposeInMainWorld("FlowplanDesktop", bridge);
+  else {
+    // Chunks of a stream, for the callback of the request with that id.
+    // They arrive apart from the answer, which says how many there were:
+    // the stream resolves once all of them came (or after two seconds).
+    const streams = new Map();
+    ipcRenderer.on("flowplan:ai-chunk", (_event, id, text) => {
+      const entry = streams.get(id);
+      if (!entry || typeof text !== "string") return;
+      entry.received++;
+      try {
+        entry.onChunk?.(text);
+      } catch {}
+      if (entry.received >= entry.expected) entry.finish?.();
+    });
+    const raw = {
+      availability: () => ipcRenderer.invoke("flowplan:ai-availability"),
+      generate: (request) => ipcRenderer.invoke("flowplan:ai-generate", request),
+      stream: async (request, onChunk) => {
+        const id = typeof request?.id === "string" ? request.id : "";
+        const entry = { onChunk, received: 0, expected: Infinity, finish: null };
+        streams.set(id, entry);
+        try {
+          const answer = await ipcRenderer.invoke("flowplan:ai-stream", request);
+          const expected = Number.isInteger(answer?.chunks) ? answer.chunks : 0;
+          if (entry.received < expected)
+            await new Promise((done) => {
+              entry.expected = expected;
+              entry.finish = done;
+              setTimeout(done, 2000);
+            });
+          return answer;
+        } finally {
+          if (streams.get(id) === entry) streams.delete(id);
+        }
+      },
+      cancel: (id) => void ipcRenderer.invoke("flowplan:ai-cancel", String(id ?? "")).catch(() => {}),
+    };
+    // Errors that cross the context bridge lose their properties, so the
+    // bridge with `ai` is made in the page's world: there an answer
+    // { error: { code, message } } becomes an Error with its code
+    // (unavailable, context-too-long, guardrail, cancelled, busy, error).
+    contextBridge.executeInMainWorld({
+      func: (bridge, raw) => {
+        const failure = (error) => Object.assign(new Error(String(error?.message || "error")), { code: String(error?.code || "error") });
+        const unwrap = (promise) =>
+          Promise.resolve(promise).then(
+            (answer) => {
+              if (answer && answer.error) throw failure(answer.error);
+              return answer ? answer.value : undefined;
+            },
+            (error) => {
+              throw failure({ code: "error", message: error?.message });
+            },
+          );
+        const ai = Object.freeze({
+          version: 1,
+          availability: () => unwrap(raw.availability()),
+          generate: (request) => unwrap(raw.generate(request)),
+          stream: (request, onChunk) => unwrap(raw.stream(request, typeof onChunk === "function" ? onChunk : null)),
+          cancel: (id) => void raw.cancel(id),
+        });
+        const parts = {};
+        for (const [key, value] of Object.entries(bridge)) parts[key] = value && typeof value === "object" ? Object.freeze(value) : value;
+        Object.defineProperty(window, "FlowplanDesktop", { value: Object.freeze({ ...parts, ai }), enumerable: true });
+      },
+      args: [bridge, raw],
+    });
+  }
   // Bubbling, on the window: the page's own handlers ran before.
   window.addEventListener("dragover", (event) => {
     if (event.defaultPrevented || !event.isTrusted || !event.dataTransfer || ![...event.dataTransfer.types].includes("Files")) return;

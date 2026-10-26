@@ -60,10 +60,18 @@ const server = "https://flowplan.example.com";
   assert.equal(isInstancePage(undefined, own), false);
   assert.equal(isInstancePage("javascript:alert(1)", own), false);
   const preload = readFileSync(join(root, "preload.js"), "utf8");
-  assert.match(preload, /else if \(instance && \(location\.protocol === "https:" \|\| location\.protocol === "http:"\) && location\.origin === instance\) \{\s*contextBridge\.exposeInMainWorld\("FlowplanDesktop"/);
-  const instanceBridge = preload.slice(preload.indexOf('exposeInMainWorld("FlowplanDesktop"'));
-  const INSTANCE_CHANNELS = ["drop-files", "notifications-enabled", "notifications-refresh", "notifications-set-enabled", "open-window", "spelling-add-word"];
-  assert.deepEqual([...new Set([...instanceBridge.matchAll(/"flowplan:([a-z-]+)"/g)].map((m) => m[1]))].sort(), INSTANCE_CHANNELS, "notifications, a word, a window, dropped files – nothing else");
+  assert.match(preload, /else if \(instance && \(location\.protocol === "https:" \|\| location\.protocol === "http:"\) && location\.origin === instance\) \{\s*const bridge = \{/);
+  // Exposed as is – or, with Apple's on-device model, made in the page's
+  // world with `ai` (device-ai.js, test/device-ai.mjs).
+  assert.match(preload, /if \(!ai\) contextBridge\.exposeInMainWorld\("FlowplanDesktop", bridge\);/);
+  assert.match(preload, /Object\.defineProperty\(window, "FlowplanDesktop", \{ value: Object\.freeze\(\{ \.\.\.parts, ai \}\), enumerable: true \}\)/);
+  const instanceBridge = preload.slice(preload.indexOf("const bridge = {"));
+  const INSTANCE_CHANNELS = ["ai-availability", "ai-cancel", "ai-generate", "ai-stream", "drop-files", "notifications-enabled", "notifications-refresh", "notifications-set-enabled", "open-window", "spelling-add-word"];
+  assert.deepEqual(
+    [...new Set([...instanceBridge.matchAll(/"flowplan:([a-z-]+)"/g)].map((m) => m[1]))].filter((c) => c !== "ai-present" && c !== "ai-chunk").sort(),
+    INSTANCE_CHANNELS,
+    "notifications, a word, a window, dropped files, the on-device model – nothing else",
+  );
   const main = readFileSync(join(root, "main.js"), "utf8");
   assert.deepEqual([...main.matchAll(/handle\("flowplan:([a-z-]+)",[^\n]*\{ instance: true \}\);/g)].map((m) => m[1]).sort(), INSTANCE_CHANNELS, "only these channels answer the instance");
   // What the instance channels take is checked again in the main process.
@@ -374,5 +382,7 @@ const server = "https://flowplan.example.com";
   assert.match(ci, /test:notifications/, "CI runs the notifications test");
   assert.match(ci, /test:features/, "CI runs the features test");
   assert.match(ci, /test:app/, "CI runs the app test");
+  assert.match(ci, /test:device-ai\n/, "CI runs the on-device model test");
+  assert.match(ci, /test:device-ai-app/, "CI runs the on-device model's app test");
   console.log("✔ CI prüft Electron und Tests");
 }

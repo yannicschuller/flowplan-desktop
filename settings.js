@@ -1,7 +1,8 @@
 // The app's own settings beyond profiles and notifications, in one place:
-// the tray / menu bar icon, launch at login, the quick capture shortcut and
-// the spell checker's languages. They live in config.json (`settings`), are
-// changed from the menu and from pages/settings.html, and are checked here –
+// the tray / menu bar icon, launch at login, the quick capture shortcut,
+// the spell checker's languages and Apple's on-device model (deviceAi).
+// They live in config.json (`settings`), are changed from the menu and from
+// pages/settings.html, and are checked here –
 // plain functions without Electron, so test/security.mjs and
 // test/features.mjs can run them with Node alone. Whatever comes from the
 // file or from the settings page is checked again: unknown keys fall away,
@@ -42,6 +43,10 @@ function defaults(platform = process.platform) {
     startHidden: false,
     captureShortcut: DEFAULT_SHORTCUT,
     spellLanguages: SPELL_LANGUAGES.slice(),
+    // Apple Intelligence on this Mac (device-ai.js): optional, on by default
+    // where the helper exists – it only starts when a page asks. Off, the
+    // helper never runs and the instance has no window.FlowplanDesktop.ai.
+    deviceAi: true,
   };
 }
 
@@ -56,6 +61,7 @@ function cleanValue(key, value, base) {
     case "tray":
     case "launchAtLogin":
     case "startHidden":
+    case "deviceAi":
       return typeof value === "boolean" ? value : base[key];
     case "captureShortcut":
       if (value === null || value === false || value === "") return null;

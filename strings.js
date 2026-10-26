@@ -151,6 +151,30 @@
     "settings.updates": ["Updates", "Updates", "Mises à jour"],
     "settings.cancel": ["Abbrechen", "Cancel", "Annuler"],
 
+    // Apple's on-device model (device-ai.js, pages/settings.html)
+    "settings.deviceAiTitle": ["Apple Intelligence (optional)", "Apple Intelligence (optional)", "Apple Intelligence (facultatif)"],
+    "settings.deviceAi": ["Apple Intelligence auf diesem Mac nutzen", "Use Apple Intelligence on this Mac", "Utiliser Apple Intelligence sur ce Mac"],
+    "settings.deviceAiHint": [
+      "Optional. KI-Funktionen von Flowplan können Apples Modell auf diesem Mac nutzen – Texte und Antworten verlassen den Mac nicht. Ausgeschaltet startet Flowplan das Modell nie und die Instanz bekommt keinen Zugriff darauf (offene Seiten nach dem Neuladen). Braucht macOS 26, einen Mac mit Apple-Chip und eingeschaltete Apple Intelligence.",
+      "Optional. Flowplan's AI features can use Apple's model on this Mac – prompts and answers never leave the Mac. Switched off, Flowplan never starts the model and the instance gets no access to it (open pages after reloading). Needs macOS 26, a Mac with Apple silicon and Apple Intelligence switched on.",
+      "Facultatif. Les fonctions d'IA de Flowplan peuvent utiliser le modèle d'Apple sur ce Mac – les textes et les réponses ne quittent pas le Mac. Désactivé, Flowplan ne démarre jamais le modèle et l'instance n'y a pas accès (pages ouvertes après rechargement). Nécessite macOS 26, un Mac avec puce Apple et Apple Intelligence activé.",
+    ],
+    "settings.deviceAiChecking": ["Wird geprüft …", "Checking…", "Vérification…"],
+    "settings.deviceAiIsOff": ["Ausgeschaltet – Flowplan nutzt das Modell nicht.", "Off – Flowplan does not use the model.", "Désactivé – Flowplan n'utilise pas le modèle."],
+    "settings.deviceAiAvailable": ["Verfügbar – läuft auf diesem Mac.", "Available – runs on this Mac.", "Disponible – fonctionne sur ce Mac."],
+    "settings.deviceAi.unsupported-os": ["Nicht verfügbar – braucht macOS 26 oder neuer.", "Not available – needs macOS 26 or newer.", "Indisponible – nécessite macOS 26 ou plus récent."],
+    "settings.deviceAi.device-not-eligible": ["Nicht verfügbar – dieser Mac unterstützt Apple Intelligence nicht.", "Not available – this Mac does not support Apple Intelligence.", "Indisponible – ce Mac ne prend pas en charge Apple Intelligence."],
+    "settings.deviceAi.apple-intelligence-off": ["Apple Intelligence ist ausgeschaltet – einschalten unter Systemeinstellungen → Apple Intelligence & Siri.", "Apple Intelligence is off – switch it on in System Settings → Apple Intelligence & Siri.", "Apple Intelligence est désactivé – activez-le dans Réglages Système → Apple Intelligence et Siri."],
+    "settings.deviceAi.model-not-ready": ["Das Modell wird noch geladen – bitte später noch einmal.", "The model is still downloading – please try again later.", "Le modèle est encore en cours de téléchargement – réessayez plus tard."],
+    "settings.deviceAi.unsupported-language": ["Nicht verfügbar – die Sprache dieses Macs wird noch nicht unterstützt.", "Not available – this Mac's language is not supported yet.", "Indisponible – la langue de ce Mac n'est pas encore prise en charge."],
+    "settings.deviceAi.error": ["Der Zustand ließ sich nicht abfragen.", "Could not check the status.", "Impossible de vérifier l'état."],
+    "ai.error.unavailable": ["Apple Intelligence ist auf diesem Mac nicht verfügbar.", "Apple Intelligence is not available on this Mac.", "Apple Intelligence n'est pas disponible sur ce Mac."],
+    "ai.error.context-too-long": ["Der Text ist zu lang für das Modell auf diesem Mac.", "The text is too long for the model on this Mac.", "Le texte est trop long pour le modèle de ce Mac."],
+    "ai.error.guardrail": ["Das Modell hat diese Anfrage abgelehnt.", "The model declined this request.", "Le modèle a refusé cette demande."],
+    "ai.error.cancelled": ["Abgebrochen.", "Cancelled.", "Annulé."],
+    "ai.error.busy": ["Das Modell beantwortet gerade eine andere Anfrage.", "The model is answering another request.", "Le modèle répond à une autre demande."],
+    "ai.error.error": ["Das Modell auf diesem Mac konnte nicht antworten.", "The model on this Mac could not answer.", "Le modèle de ce Mac n'a pas pu répondre."],
+
     // Links to pages (deep-links.js)
     "links.unknown": ["{0} als Profil hinzufügen?", "Add {0} as a profile?", "Ajouter {0} comme profil ?"],
     "links.unknownDetail": ["Ein Link möchte eine Seite von {0} öffnen. Für diese Instanz gibt es noch kein Profil. Füge sie nur hinzu, wenn du ihr vertraust.", "A link wants to open a page of {0}. There is no profile for this instance yet. Only add it if you trust it.", "Un lien veut ouvrir une page de {0}. Il n'existe pas encore de profil pour cette instance. Ne l'ajoutez que si vous lui faites confiance."],
