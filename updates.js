@@ -67,7 +67,8 @@ function reduce(state = INITIAL, event = {}) {
     case "check":
       // A download that runs or waits stays; a check from the menu shows it again.
       if (state.phase === "downloading" || state.phase === "ready") return { ...state, manual: !!event.manual, dismissed: event.manual ? false : state.dismissed };
-      return { ...state, phase: "checking", manual: !!event.manual, error: null, dismissed: false };
+      // An automatic check does not hide the answer to one from the menu.
+      return { ...state, phase: "checking", manual: !!event.manual || (state.phase === "checking" && state.manual), error: null, dismissed: false };
     case "available": {
       if (event.canInstall) return { ...state, phase: "downloading", version: event.version, percent: 0, transferred: 0, total: 0, bytesPerSecond: 0, dismissed: false };
       // Pointing to the download page: once per version, unless asked.
@@ -235,6 +236,9 @@ function setupUpdates(options = {}) {
   const source = feed();
   if (source.ignored) console.warn(t("updates.sourceIgnored", source.ignored));
   if (source.url) updater.setFeedURL({ provider: "generic", url: source.url });
+  // Linux outside an AppImage (.tar.gz): electron-updater skips every check
+  // there; it may check – to point to the download page – but not install.
+  if (process.platform === "linux" && !process.env.APPIMAGE) updater.isUpdaterActive = () => true;
   updater.autoDownload = canInstall();
   updater.autoInstallOnAppQuit = canInstall();
   updater.on("checking-for-update", () => {});
@@ -262,9 +266,17 @@ function ask() {
     .catch(() => {});
 }
 // "Nach Updates suchen …" in the menu: an answer either way, in the toast.
+// The updater retries an unreachable source for a long time; a check the
+// person asked for answers after half a minute at the latest.
+const MANUAL_TIMEOUT = 30_000;
+let manualTimer = null;
 function checkForUpdatesNow() {
   if (!updater) return dispatch({ type: "not-installed" });
   dispatch({ type: "check", manual: true });
+  clearTimeout(manualTimer);
+  manualTimer = setTimeout(() => {
+    if (state.phase === "checking" && state.manual) dispatch({ type: "error", message: t("updates.timeout") });
+  }, MANUAL_TIMEOUT);
   ask();
 }
 // A button of the toast (pages/update.html).

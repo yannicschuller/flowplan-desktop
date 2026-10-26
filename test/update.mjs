@@ -99,7 +99,8 @@ const toastTitle = (app) =>
 
 // Run 1: found and offered.
 {
-  const env = process.platform === "linux" ? { APPIMAGE: "" } : {};
+  // Linux: as the unpacked app or the .tar.gz, without APPIMAGE.
+  const env = {};
   const { app, log } = await run(env);
   let list;
   try {

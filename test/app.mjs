@@ -44,7 +44,8 @@ const launch = () =>
     executablePath,
     args: [...(packaged ? [] : ["."]), `--user-data-dir=${dir}`],
     cwd: new URL("..", import.meta.url).pathname,
-    env: { ...process.env, XDG_CONFIG_HOME: xdg, FLOWPLAN_NOTIFICATION_INTERVAL: "2" },
+    // A packaged app checks for updates: at a source that is not there.
+    env: { ...process.env, XDG_CONFIG_HOME: xdg, FLOWPLAN_NOTIFICATION_INTERVAL: "2", ...(packaged ? { FLOWPLAN_UPDATE_URL: `${instance.origin}/api/no-updates/` } : {}) },
   });
 // Records native menus, dialogs and the app's events instead of showing them.
 async function record(app) {
@@ -105,7 +106,7 @@ await main.waitForSelector("#editor");
   await until(() => seen(app, "contextMenus"), "menu for the field");
   const field = await lastContextMenu(app);
   for (const id of ["cut", "copy", "paste", "paste-plain", "select-all", "spelling-languages"]) assert.ok(field.includes(id), id);
-  assert.ok(field.includes("inspect"), "Inspect Element outside the packaged app");
+  assert.equal(field.includes("inspect"), !packaged, "Inspect Element outside the packaged app only");
   await main.click("#own", { button: "right" });
   await until(async () => (await lastContextMenu(app)).includes("link-window"), "menu for a link");
   assert.deepEqual((await lastContextMenu(app)).slice(0, 3), ["link-window", "link-open", "link-copy"]);
@@ -309,7 +310,8 @@ await main.waitForSelector("#editor");
     await until(() => existsSync(file), "autostart entry");
     await settings.check("#startHidden");
     await until(() => readFileSync(file, "utf8").includes('"--hidden"'), "hidden start");
-    assert.match(readFileSync(file, "utf8"), /^Exec="[^"]+" "[^"]+" "--hidden"$/m, "electron, the app, --hidden");
+    // Electron with the app's folder (npm start) or the app itself, then --hidden.
+    assert.match(readFileSync(file, "utf8"), packaged ? /^Exec="[^"]+" "--hidden"$/m : /^Exec="[^"]+" "[^"]+" "--hidden"$/m);
     await settings.uncheck("#launchAtLogin");
     await until(() => !existsSync(file), "removed again");
     assert.equal(config().settings.startHidden, false);
@@ -362,9 +364,14 @@ await main.waitForSelector("#editor");
 {
   const dialogs = await seen(app, "dialogs");
   await clickMenu(app, "check-updates");
-  await until(() => seen(app, "updates"), "update state");
-  const state = await app.evaluate(() => globalThis.seen.updates.at(-1));
-  assert.equal(state.phase, "not-installed", "npm start does not update itself");
+  // npm start does not update itself; the packaged app cannot reach the source.
+  const state = await until(async () => {
+    const last = await app.evaluate(() => globalThis.seen.updates.at(-1));
+    return last && ["not-installed", "error"].includes(last.phase) ? last : null;
+  }, "update state", 45000);
+  assert.equal(state.phase, packaged ? "error" : "not-installed");
+  assert.ok(state.view, "shown, since asked from the menu");
+  if (packaged) assert.ok(instance.to(/\/api\/no-updates\//).length, "asked the given source");
   const toast = await until(() => app.evaluate(({ webContents }) => webContents.getAllWebContents().find((c) => c.getURL().includes("update.html"))?.id), "the toast");
   const text = await until(() => app.evaluate(({ webContents }, id) => webContents.fromId(id).executeJavaScript("document.getElementById('title').textContent"), toast), "toast text");
   assert.equal(text, state.view.title);

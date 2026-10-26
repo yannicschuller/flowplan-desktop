@@ -194,6 +194,7 @@
     "updates.ok": ["OK", "OK", "OK"],
     "updates.checking": ["Suche nach Updates …", "Checking for updates…", "Recherche de mises à jour…"],
     "updates.downloading": ["Lade Flowplan {0} …", "Downloading Flowplan {0}…", "Téléchargement de Flowplan {0}…"],
+    "updates.timeout": ["Die Updatequelle antwortet nicht.", "The update source does not answer.", "La source des mises à jour ne répond pas."],
     "updates.ofSize": ["{0} von {1}", "{0} of {1}", "{0} sur {1}"],
     "updates.available": ["Flowplan {0} ist verfügbar", "Flowplan {0} is available", "Flowplan {0} est disponible"],
     "updates.availableDetail": ["Du nutzt Version {0}. Lade die neue Version herunter und ersetze die App damit.", "You are using version {0}. Download the new version and replace the app with it.", "Vous utilisez la version {0}. Téléchargez la nouvelle version et remplacez l'application."],

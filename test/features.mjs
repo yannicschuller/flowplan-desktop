@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { standIn, INBOX, WORKSPACE, SPACE, PAGE, TASK_PAGE, PNG } from "./stand-in.mjs";
+import { standIn, INBOX, WORKSPACE, SPACE, PAGE, TASK_PAGE, PNG, USER } from "./stand-in.mjs";
 
 const require = createRequire(import.meta.url);
 const strings = require("../strings.js");
@@ -251,6 +251,10 @@ const server = "https://flowplan.example.com";
   assert.equal(updates.reduce(s, { type: "error", message: "x" }), s, "a failed later check keeps the update");
   s = updates.reduce(s, { type: "check", manual: false });
   assert.equal(s.phase, "ready");
+  // An automatic check meanwhile keeps the menu's answer visible.
+  const both = updates.reduce(updates.reduce(updates.INITIAL, { type: "check", manual: true }), { type: "check", manual: false });
+  assert.equal(both.manual, true);
+  assert.notEqual(view(updates.reduce(both, { type: "not-available" })), null);
   // From the menu: an answer either way, errors only then.
   let m = updates.reduce(updates.INITIAL, { type: "check", manual: true });
   assert.equal(view(m).busy, true);
@@ -306,6 +310,12 @@ const server = "https://flowplan.example.com";
   // As a task: an open task due today.
   const task = api.captureCommand({ text: "Anrufen <Max>\nNotiz", task: true }, { pageId: INBOX, rowId: PAGE, today: "2026-10-26" });
   assert.equal(task.article, '<ul data-type="taskList"><li data-type="taskItem" data-checked="false" data-due="2026-10-26"><p>Anrufen &lt;Max&gt;</p></li></ul><p>Notiz</p>');
+  // Assigned to the person capturing, so it is under "My tasks".
+  const mine = api.captureCommand({ text: "Anrufen", task: true }, { pageId: INBOX, rowId: PAGE, today: "2026-10-26", user: { id: USER, name: "Alex <M>" } });
+  assert.equal(mine.article, `<ul data-type="taskList"><li data-type="taskItem" data-checked="false" data-due="2026-10-26"><p>Anrufen <span data-mention="${USER}" class="mention">@Alex &lt;M&gt;</span></p></li></ul>`);
+  assert.doesNotMatch(api.captureCommand({ text: "x", task: true }, { pageId: INBOX, user: { id: "../x", name: "x" } }).article, /data-mention/, "only a real id");
+  await client.capture({ text: "Als Aufgabe", task: true }, "2026-10-26");
+  assert.match(JSON.parse(instance.to("/api/command").at(-1).body).article, new RegExp(`data-mention="${USER}"`));
   assert.equal(task.text, undefined);
   assert.throws(() => api.captureCommand({ text: "   " }, { pageId: INBOX }), (e) => e.kind === "empty");
   assert.throws(() => api.captureCommand({ text: "x".repeat(20_001) }, { pageId: INBOX }), (e) => e.kind === "too-long");
