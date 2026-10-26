@@ -12,6 +12,7 @@ export const SPACE = "22222222-2222-4222-8222-222222222222";
 export const INBOX = "33333333-3333-4333-8333-333333333333";
 export const PAGE = "44444444-4444-4444-8444-444444444444";
 export const TASK_PAGE = "55555555-5555-4555-8555-555555555555";
+export const USER = "66666666-6666-4666-8666-666666666666";
 
 // A 1×1 PNG.
 export const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
@@ -71,6 +72,7 @@ export async function standIn(options = {}) {
     }
     if (url.pathname === "/api/bootstrap")
       return json(200, {
+        user: { id: USER, name: "Alex <Morgan>" },
         workspace: { id: WORKSPACE, name: "Team" },
         workspaces: [{ id: WORKSPACE, name: "Team", role: "owner", guest: 0 }],
         spaces: [{ id: SPACE, name: "General", deleted_at: null }],

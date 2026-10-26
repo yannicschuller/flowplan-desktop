@@ -60,9 +60,10 @@ const paragraphsHtml = (value) =>
     .join("");
 
 // Quick capture as the web app's command: the first line is the title, the
-// rest the text. As a task, the first line becomes an open task due today
-// (it shows under "My tasks" and in the tray) with the rest below it.
-function captureCommand({ text: raw = "", task = false } = {}, { pageId, rowId = randomUUID(), today = localDay() } = {}) {
+// rest the text. As a task, the first line becomes an open task due today,
+// assigned to the person capturing (a mention, as the editor writes it), so
+// it shows under "My tasks" and in the tray, with the rest below it.
+function captureCommand({ text: raw = "", task = false } = {}, { pageId, rowId = randomUUID(), today = localDay(), user = null } = {}) {
   const value = String(raw).replace(/\r\n?/g, "\n").trim();
   if (!value) throw new ApiError("empty");
   if (value.length > MAX_TEXT) throw new ApiError("too-long");
@@ -73,7 +74,8 @@ function captureCommand({ text: raw = "", task = false } = {}, { pageId, rowId =
   const command = { action: "capture.record", pageId, rowId, title };
   if (task) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(today)) throw new ApiError("empty");
-    command.article = `<ul data-type="taskList"><li data-type="taskItem" data-checked="false" data-due="${today}"><p>${esc(title)}</p></li></ul>${paragraphsHtml(rest)}`;
+    const mention = user && isId(user.id) ? ` <span data-mention="${user.id}" class="mention">@${esc(text(user.name, 80) || "…")}</span>` : "";
+    command.article = `<ul data-type="taskList"><li data-type="taskItem" data-checked="false" data-due="${today}"><p>${esc(title)}${mention}</p></li></ul>${paragraphsHtml(rest)}`;
   } else if (rest) command.text = rest;
   return command;
 }
@@ -222,6 +224,7 @@ function createInstanceApi({ origin, fetch }) {
         key,
         request(`/api/bootstrap${workspaceId ? `?workspace=${encodeURIComponent(workspaceId)}` : ""}`).then((data) => ({
           workspace: isId(data?.workspace?.id) ? data.workspace.id : null,
+          user: isId(data?.user?.id) ? { id: data.user.id, name: text(data.user.name, 80) } : null,
           workspaces: (Array.isArray(data?.workspaces) ? data.workspaces : [])
             .filter((w) => w && isId(w.id) && w.role !== "viewer" && !w.guest)
             .slice(0, MAX_WORKSPACES)
@@ -263,7 +266,8 @@ function createInstanceApi({ origin, fetch }) {
     // Quick capture into the inbox; answers with the new record's address.
     async capture(input, today = localDay()) {
       const target = await inbox();
-      const command = captureCommand(input, { pageId: target.pageId, today });
+      const { user } = await bootstrap();
+      const command = captureCommand(input, { pageId: target.pageId, today, user });
       const result = await request("/api/command", { method: "POST", json: command });
       const rowId = isId(result?.rowId) ? result.rowId : command.rowId;
       return { ...target, rowId, url: pageAddress(origin, target.pageId, rowId) };
