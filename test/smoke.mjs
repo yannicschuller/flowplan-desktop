@@ -24,6 +24,16 @@ async function launch(config, env = {}) {
   });
   return { app, window: await app.firstWindow() };
 }
+// The setup page hands over to a new window of the new profile (profiles.js):
+// the window that shows the instance.
+async function instanceWindow(app) {
+  for (let i = 0; i < 150; i++) {
+    const found = app.windows().find((page) => !page.isClosed() && page.url().startsWith(server));
+    if (found) return found;
+    await new Promise((done) => setTimeout(done, 200));
+  }
+  throw new Error(`no window with ${server}`);
+}
 // First start: the setup page, a wrong address is refused, the right one loads.
 {
   const { app, window } = await launch();
@@ -35,10 +45,10 @@ async function launch(config, env = {}) {
   assert.match(await window.textContent("#error"), /keine Flowplan-Instanz|No Flowplan instance|Aucune instance Flowplan/);
   await window.fill("#server", server);
   await window.click("#submit");
-  await window.waitForURL((url) => url.href.startsWith(server), { timeout: 30000 });
-  await window.waitForLoadState("domcontentloaded");
-  assert.equal(await window.title().then((t) => /Flowplan/i.test(t)), true);
-  await window.screenshot({ path: "test/app.png" });
+  const loaded = await instanceWindow(app);
+  await loaded.waitForLoadState("domcontentloaded");
+  assert.equal(await loaded.title().then((t) => /Flowplan/i.test(t)), true);
+  await loaded.screenshot({ path: "test/app.png" });
   await app.close();
   console.log("✔ Einrichtung und Laden");
 }
@@ -56,7 +66,7 @@ async function launch(config, env = {}) {
   await window.waitForSelector("#form");
   assert.equal(await window.inputValue("#server"), new URL(server).origin);
   await window.click("#submit");
-  await window.waitForURL((url) => url.href.startsWith(server), { timeout: 30000 });
+  await instanceWindow(app);
   await app.close();
   console.log("✔ Vorgegebene Adresse");
 }
@@ -99,12 +109,18 @@ async function launch(config, env = {}) {
   assert.ok((await browser.post("/api/auth/demo")).ok());
   const challenge = new URL(opened).searchParams.get("challenge");
   const confirm = await (await browser.get(opened)).text();
-  assert.match(confirm, /In der Desktop-App anmelden/);
+  assert.match(confirm, /In der (Desktop-)?App anmelden/);
   const page = await (await browser.post("/api/auth/desktop", { form: { challenge } })).text();
-  const link = page.match(/href="(flowplan:[^"]+)"/)[1].replaceAll("&amp;", "&");
+  const link = page.match(/href="(flowplan:[^"]+)"/)[1].replaceAll("&amp;", "&").replaceAll("&#38;", "&");
   await browser.dispose();
   await app.evaluate(({ app }, link) => app.emit("open-url", { preventDefault() {} }, link), link);
-  await window.waitForFunction(async () => (await fetch("/api/bootstrap")).ok, undefined, { timeout: 30000 });
+  // The app reloads the instance after redeeming: ask again until signed in.
+  let signedIn = false;
+  for (let i = 0; i < 60 && !signedIn; i++) {
+    signedIn = await window.evaluate(async () => (await fetch("/api/bootstrap")).ok).catch(() => false);
+    if (!signedIn) await new Promise((done) => setTimeout(done, 500));
+  }
+  assert.ok(signedIn, "signed in");
   // Signed in: the waiting window is gone, and the instance has no bridge.
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 1);
   assert.equal(await window.evaluate(() => typeof window.flowplanDesktop), "undefined");
