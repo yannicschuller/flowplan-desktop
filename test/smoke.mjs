@@ -111,7 +111,7 @@ async function instanceWindow(app) {
   const confirm = await (await browser.get(opened)).text();
   assert.match(confirm, /In der (Desktop-)?App anmelden/);
   const page = await (await browser.post("/api/auth/desktop", { form: { challenge } })).text();
-  const link = page.match(/href="(flowplan:[^"]+)"/)[1].replaceAll("&amp;", "&").replaceAll("&#38;", "&");
+  const link = page.match(/href="(flowplan:[^"]+)"/)[1].replace(/&(?:amp|#38);/g, "&");
   await browser.dispose();
   await app.evaluate(({ app }, link) => app.emit("open-url", { preventDefault() {} }, link), link);
   // The app reloads the instance after redeeming: ask again until signed in.
