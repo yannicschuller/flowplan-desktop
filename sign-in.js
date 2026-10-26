@@ -139,12 +139,14 @@ function setupBrowserSignIn({ server, getWindow, preload, locale = () => "en" })
     return true;
   }
   // macOS delivers the link as an event, Windows and Linux start a second
-  // instance with the link as argument.
+  // instance with the link as argument. Only flowplan://sign-in is ours;
+  // flowplan://open (a page) goes to deep-links.js through main.js.
   app.on("open-url", (event, link) => {
+    if (!isSignInLink(link)) return;
     event.preventDefault();
     handle(link);
   });
-  const fromArgs = (argv) => argv.find((a) => a.startsWith(`${SCHEME}://`));
+  const fromArgs = (argv) => argv.find((a) => typeof a === "string" && isSignInLink(a));
   const initial = fromArgs(process.argv);
   if (initial) queued.push(initial);
 
@@ -172,6 +174,15 @@ function setupBrowserSignIn({ server, getWindow, preload, locale = () => "en" })
     pendingCount: () => pending.size,
   };
 }
+// flowplan://sign-in?… – the hand-off of a sign-in, nothing else.
+function isSignInLink(link) {
+  try {
+    const url = new URL(link);
+    return url.protocol === `${SCHEME}:` && url.hostname === "sign-in";
+  } catch {
+    return false;
+  }
+}
 function sameOrigin(url, origin) {
   try {
     return new URL(url).origin === origin;
@@ -179,4 +190,4 @@ function sameOrigin(url, origin) {
     return false;
   }
 }
-module.exports = { setupBrowserSignIn };
+module.exports = { setupBrowserSignIn, isSignInLink };

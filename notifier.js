@@ -204,6 +204,8 @@ function setupNotifier(deps) {
     reconcile,
     applyBadge,
     settings,
+    // The number on the icon (the tray shows it too).
+    unreadTotal: () => Math.max(0, badge),
     // From the bridge or the menu.
     setEnabled(on) {
       saveSettings({ enabled: on === true });

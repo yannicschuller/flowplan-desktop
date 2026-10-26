@@ -34,6 +34,11 @@ jobs:
       - run: npm run check
       - name: Security guards (Node only)
         run: npm run test:security
+      - name: Features (Node only)
+        # Context menu, quick capture, tray, links, page windows, files,
+        # launch at login, printing and the update toast – the decisions, and
+        # what the app asks an instance against a local stand-in.
+        run: npm run test:features
       - name: Electron still supported
         # Electron keeps the latest three majors patched. An installed major
         # older than latest − 2 gets no Chromium security fixes any more.
@@ -66,6 +71,13 @@ jobs:
             xvfb-run -a npm run test:notifications
           else
             echo "::warning::xvfb-run is not installed on this runner; the notifications test was skipped."
+          fi
+      - name: Desktop features (Electron under xvfb)
+        run: |
+          if command -v xvfb-run > /dev/null; then
+            xvfb-run -a npm run test:app
+          else
+            echo "::warning::xvfb-run is not installed on this runner; the app test was skipped."
           fi
       - name: Test build (Linux, unpacked)
         run: npx electron-builder --linux dir --publish never

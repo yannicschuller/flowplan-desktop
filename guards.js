@@ -100,7 +100,64 @@ function classifyHealth({ status, contentType = "", data }) {
   if (/text\/html/i.test(contentType)) return "html";
   return "other";
 }
+// The address of an instance: an https origin (http only for loopback
+// addresses, local tests), nothing else – no path, no credentials.
+function instanceOrigin(value) {
+  let url;
+  try {
+    url = new URL(String(value));
+  } catch {
+    return null;
+  }
+  if (url.username || url.password) return null;
+  if (url.protocol === "https:") return url.origin;
+  if (url.protocol === "http:" && LOOPBACK.includes(url.hostname)) return url.origin;
+  return null;
+}
+// What the app hands to the system browser or mail program: http(s) and
+// mailto only – never file:, javascript:, a custom scheme or the like.
+function externalUrl(value) {
+  if (typeof value !== "string" || !value || value.length > 8000) return null;
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if (url.protocol === "mailto:") return url.href;
+  if ((url.protocol === "https:" || url.protocol === "http:") && !url.username && !url.password) return url.href;
+  return null;
+}
+// A page of the profile's instance that may open in a window of its own
+// (or be remembered for one): same origin, no credentials, no endpoint.
+function instancePageUrl(value, origin) {
+  if (!origin || typeof value !== "string" || value.length > 4000) return null;
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  if (url.origin !== origin || url.username || url.password || url.pathname.startsWith("/api/")) return null;
+  return url.href;
+}
+// Shift-click (new-window), middle- or Ctrl-click (background-tab) and
+// window.open (foreground-tab) ask for another window; a plain link does not.
+const OWN_WINDOW_DISPOSITIONS = ["new-window", "background-tab", "foreground-tab"];
+const opensOwnWindow = (disposition) => OWN_WINDOW_DISPOSITIONS.includes(disposition);
+// A word for the spell checker's own dictionary (from the right-click menu
+// or the web app's text menu): one word, letters with apostrophes or
+// hyphens inside, at most 64 characters.
+function dictionaryWord(value) {
+  return typeof value === "string" && /^\p{L}[\p{L}\p{M}'’-]{0,63}$/u.test(value) && !/['’-]$/.test(value);
+}
 module.exports = {
+  instanceOrigin,
+  externalUrl,
+  instancePageUrl,
+  opensOwnWindow,
+  dictionaryWord,
   pagesUrl,
   isOwnPage,
   sameOrigin,

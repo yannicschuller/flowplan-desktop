@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'" />
+    <title data-i18n-title="settings.title">Settings</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="settings">
+    <main>
+      <h1 data-i18n="settings.title">Settings</h1>
+
+      <section>
+        <h2 data-i18n="settings.general">General</h2>
+        <label class="switch"><input type="checkbox" id="tray" /> <span id="tray-label" data-i18n="settings.tray">Show icon in the notification area</span></label>
+        <p class="small" id="tray-hint" data-i18n="settings.trayHint">Quick capture, today's tasks and unread notifications.</p>
+        <label class="switch"><input type="checkbox" id="launchAtLogin" /> <span data-i18n="settings.launchAtLogin">Open Flowplan at login</span></label>
+        <label class="switch indent"><input type="checkbox" id="startHidden" /> <span data-i18n="settings.startHidden">Start without a window</span></label>
+      </section>
+
+      <section>
+        <h2 data-i18n="settings.capture">Quick capture</h2>
+        <p class="small" data-i18n="settings.captureHint">Opens a small window above every app and saves into the inbox of the active profile.</p>
+        <div class="shortcut-row">
+          <input id="shortcut" readonly data-i18n-placeholder="settings.shortcutPlaceholder" placeholder="Press a key combination" aria-labelledby="shortcut-label" />
+          <button type="button" id="record" class="secondary" data-i18n="settings.shortcutChange">Change</button>
+          <button type="button" id="reset" class="secondary" data-i18n="settings.shortcutDefault">Default</button>
+          <button type="button" id="off" class="secondary" data-i18n="settings.shortcutOff">Off</button>
+        </div>
+        <p id="shortcut-label" class="small shortcut-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section>
+        <h2 data-i18n="settings.spelling">Spell checking</h2>
+        <div class="row left" id="languages">
+          <label class="switch"><input type="checkbox" value="de-DE" /> <span data-i18n="spelling.de-DE">German</span></label>
+          <label class="switch"><input type="checkbox" value="en-US" /> <span data-i18n="spelling.en-US">English</span></label>
+          <label class="switch"><input type="checkbox" value="fr-FR" /> <span data-i18n="spelling.fr-FR">French</span></label>
+        </div>
+      </section>
+
+      <section>
+        <h2 data-i18n="settings.updates">Updates</h2>
+        <p class="small" id="version"></p>
+        <div class="row left"><button type="button" id="check" class="secondary" data-i18n="menu.checkUpdates">Check for Updates…</button></div>
+      </section>
+
+      <div class="error" id="error" role="alert"></div>
+    </main>
+    <script src="../strings.js"></script>
+    <script src="i18n.js"></script>
+    <script src="settings-page.js"></script>
+  </body>
+</html>

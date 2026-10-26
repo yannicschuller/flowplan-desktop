@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'" />
+    <title data-i18n-title="capture.title">Quick capture</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="capture">
+    <form id="form" class="capture-card">
+      <div class="capture-head">
+        <img src="../build/icon.png" alt="" />
+        <strong data-i18n="capture.title">Quick capture</strong>
+        <span id="target" class="capture-target"></span>
+      </div>
+      <textarea id="text" maxlength="20000" rows="4" data-i18n-placeholder="capture.placeholder" placeholder="What do you want to capture?" aria-labelledby="form" spellcheck="true" autofocus></textarea>
+      <div id="status" class="capture-status" role="status" aria-live="polite"></div>
+      <div class="capture-foot">
+        <label class="capture-task"><input type="checkbox" id="task" /> <span data-i18n="capture.asTask">As a task for today</span></label>
+        <span class="capture-hint" data-i18n="capture.hint">Enter saves · Shift+Enter new line · Esc closes</span>
+      </div>
+    </form>
+    <script src="../strings.js"></script>
+    <script src="i18n.js"></script>
+    <script src="capture-page.js"></script>
+  </body>
+</html>

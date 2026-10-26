@@ -221,7 +221,7 @@ const menuChecked = (app, id) => app.evaluate(({ Menu }, id) => Menu.getApplicat
   assert.match(await window.evaluate(() => window.FlowplanDesktop.version), /^\d+\.\d+\.\d+/);
   assert.equal(await window.evaluate(() => window.FlowplanDesktop.notifications.enabled()), true);
   assert.equal(await window.evaluate(() => typeof window.flowplanDesktop), "undefined");
-  assert.deepEqual(await window.evaluate(() => Object.keys(window.FlowplanDesktop).sort()), ["notifications", "platform", "version"]);
+  assert.deepEqual(await window.evaluate(() => Object.keys(window.FlowplanDesktop).sort()), ["notifications", "openWindow", "platform", "spelling", "version"]);
   console.log("✔ Kleine Brücke nur auf der Instanz");
 
   // Signed out: the instance answers 401 and nothing is shown.

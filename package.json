@@ -9,13 +9,15 @@
   "license": "AGPL-3.0-only",
   "scripts": {
     "start": "electron .",
-    "check": "node --check main.js && node --check preload.js && node --check updates.js && node --check sign-in.js && node --check fallback.js && node --check guards.js && node --check profiles.js && node --check notifications.js && node --check notifier.js && node --check strings.js && node --check handoff.js && node --check pages/setup.js && node --check pages/offline.js && node --check pages/sign-in-page.js && node --check pages/profiles-page.js && node --check pages/i18n.js && node --check test/security.mjs && node --check test/update.mjs && node --check test/offline.mjs && node --check test/smoke.mjs && node --check test/profiles.mjs && node --check test/notifications.mjs && node --check test/handoff.mjs",
-    "test": "node test/security.mjs && node test/offline.mjs && node test/profiles.mjs && node test/notifications.mjs && node test/handoff.mjs",
+    "check": "node --check main.js && node --check preload.js && node --check updates.js && node --check sign-in.js && node --check fallback.js && node --check guards.js && node --check profiles.js && node --check notifications.js && node --check notifier.js && node --check strings.js && node --check handoff.js && node --check settings.js && node --check context-menu.js && node --check instance-api.js && node --check capture.js && node --check tray.js && node --check deep-links.js && node --check page-windows.js && node --check files.js && node --check autostart.js && node --check print.js && node --check pages/setup.js && node --check pages/offline.js && node --check pages/sign-in-page.js && node --check pages/profiles-page.js && node --check pages/i18n.js && node --check pages/settings-page.js && node --check pages/capture-page.js && node --check pages/update-page.js && node --check test/security.mjs && node --check test/update.mjs && node --check test/offline.mjs && node --check test/smoke.mjs && node --check test/profiles.mjs && node --check test/notifications.mjs && node --check test/handoff.mjs && node --check test/features.mjs && node --check test/app.mjs && node --check test/stand-in.mjs",
+    "test": "node test/security.mjs && node test/features.mjs && node test/offline.mjs && node test/profiles.mjs && node test/notifications.mjs && node test/handoff.mjs && node test/app.mjs",
     "test:security": "node test/security.mjs",
+    "test:features": "node test/features.mjs",
     "test:offline": "node test/offline.mjs",
     "test:profiles": "node test/profiles.mjs",
     "test:notifications": "node test/notifications.mjs",
     "test:handoff": "node test/handoff.mjs",
+    "test:app": "node test/app.mjs",
     "test:smoke": "node test/smoke.mjs",
     "test:update": "node test/update.mjs",
     "dist": "electron-builder --publish never",
@@ -49,8 +51,20 @@
       "notifier.js",
       "strings.js",
       "handoff.js",
+      "settings.js",
+      "context-menu.js",
+      "instance-api.js",
+      "capture.js",
+      "tray.js",
+      "deep-links.js",
+      "page-windows.js",
+      "files.js",
+      "autostart.js",
+      "print.js",
       "pages/**",
       "build/icon.png",
+      "build/trayTemplate.png",
+      "build/trayTemplate@2x.png",
       "build/update.json",
       "package.json"
     ],
@@ -86,6 +100,24 @@
         "NSMicrophoneUsageDescription": "Flowplan uses the microphone for voice notes.",
         "NSUserActivityTypes": [
           "app.flowplan.page"
+        ],
+        "CFBundleDocumentTypes": [
+          {
+            "CFBundleTypeName": "Flowplan Import",
+            "CFBundleTypeRole": "Viewer",
+            "LSHandlerRank": "Alternate",
+            "LSItemContentTypes": [
+              "com.adobe.pdf",
+              "public.png",
+              "public.jpeg",
+              "com.compuserve.gif",
+              "org.webmproject.webp",
+              "public.avif",
+              "public.heic",
+              "net.daringfireball.markdown",
+              "public.plain-text"
+            ]
+          }
         ]
       }
     },
@@ -147,7 +179,17 @@
           ]
         }
       ],
-      "artifactName": "Flowplan-${version}-linux-${arch}.${ext}"
+      "artifactName": "Flowplan-${version}-linux-${arch}.${ext}",
+      "mimeTypes": [
+        "application/pdf",
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp",
+        "image/avif",
+        "text/markdown",
+        "text/plain"
+      ]
     },
     "publish": [
       {

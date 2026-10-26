@@ -1,4 +1,5 @@
-// What the window lets through (guards.js, profiles.js, notifications.js, strings.js, updates.js), checked
+// What the window lets through (guards.js, profiles.js, notifications.js, strings.js, updates.js,
+// context-menu.js, deep-links.js, files.js, instance-api.js, settings.js), checked
 // with Node alone – no Electron, no network. Usage: node test/security.mjs
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
@@ -59,15 +60,84 @@ const server = "https://flowplan.example.com";
   assert.equal(isInstancePage(undefined, own), false);
   assert.equal(isInstancePage("javascript:alert(1)", own), false);
   const preload = readFileSync(join(root, "preload.js"), "utf8");
-  assert.match(preload, /else if \(instance && \(location\.protocol === "https:" \|\| location\.protocol === "http:"\) && location\.origin === instance\)\s*contextBridge\.exposeInMainWorld\("FlowplanDesktop"/);
+  assert.match(preload, /else if \(instance && \(location\.protocol === "https:" \|\| location\.protocol === "http:"\) && location\.origin === instance\) \{\s*contextBridge\.exposeInMainWorld\("FlowplanDesktop"/);
   const instanceBridge = preload.slice(preload.indexOf('exposeInMainWorld("FlowplanDesktop"'));
-  assert.deepEqual([...instanceBridge.matchAll(/"flowplan:([a-z-]+)"/g)].map((m) => m[1]).sort(), ["notifications-enabled", "notifications-refresh", "notifications-set-enabled"], "notifications alone");
+  const INSTANCE_CHANNELS = ["drop-files", "notifications-enabled", "notifications-refresh", "notifications-set-enabled", "open-window", "spelling-add-word"];
+  assert.deepEqual([...new Set([...instanceBridge.matchAll(/"flowplan:([a-z-]+)"/g)].map((m) => m[1]))].sort(), INSTANCE_CHANNELS, "notifications, a word, a window, dropped files – nothing else");
   const main = readFileSync(join(root, "main.js"), "utf8");
-  assert.deepEqual([...main.matchAll(/handle\("flowplan:([a-z-]+)",[^\n]*\{ instance: true \}\);/g)].map((m) => m[1]).sort(), ["notifications-enabled", "notifications-refresh", "notifications-set-enabled"], "only these channels answer the instance");
+  assert.deepEqual([...main.matchAll(/handle\("flowplan:([a-z-]+)",[^\n]*\{ instance: true \}\);/g)].map((m) => m[1]).sort(), INSTANCE_CHANNELS, "only these channels answer the instance");
+  // What the instance channels take is checked again in the main process.
+  assert.match(main, /handle\("flowplan:spelling-add-word", \(event, word\) => dictionaryWord\(word\) && /);
+  assert.match(main, /handle\("flowplan:drop-files", \(event, paths\) => void takeFiles\(fileRules\.droppedPaths\(paths\)\)/);
+  assert.match(main, /handle\("flowplan:open-window", \(event, url\) => void openPageWindow\(ownerOf\(event\.sender\.session\)\?\.id, url\)/, "a window of the calling session's own profile");
+  assert.match(main, /const target = profile && instancePageUrl\(url, profile\.server\);\s*if \(!target\) return null;/, "and only a page of its instance");
+  // Spelling suggestions come from the spell checker in the page, no IPC.
+  const spelling = instanceBridge.slice(instanceBridge.indexOf("check:"), instanceBridge.indexOf("addWord:"));
+  assert.match(spelling, /webFrame\.isWordMisspelled\(value\)/);
+  assert.doesNotMatch(spelling, /ipcRenderer/);
+  // Only real drops by the person, after the page's own handlers, with
+  // files from the disk – a page cannot make the app read a file.
+  const drop = preload.slice(preload.indexOf('window.addEventListener("drop"'));
+  assert.match(drop, /if \(event\.defaultPrevented \|\| !event\.isTrusted \|\| !event\.dataTransfer\) return;/);
+  assert.match(drop, /webUtils\.getPathForFile\(file\)/);
   assert.match(main, /if \(!frame \|\| frame\.parent\) return false;/, "the main frame only");
   assert.match(main, /isInstancePage\(frame\.url, owner\.server\)/, "of the session's own profile");
   assert.match(main, /additionalArguments: profile \? \[`--flowplan-instance=\$\{profile\.server\}`/);
   console.log("✔ Kleine Brücke nur auf der eigenen Instanz");
+}
+
+// E17: the new rules of the window – links to the browser, pages in their
+// own window, words for the dictionary, links flowplan://, dropped files,
+// settings – and that nothing of it opens a dialog in the middle of work.
+{
+  const { instanceOrigin, externalUrl, instancePageUrl, opensOwnWindow, dictionaryWord } = guards;
+  assert.equal(instanceOrigin("https://flowplan.example.com/x?y"), "https://flowplan.example.com");
+  assert.equal(instanceOrigin("http://localhost:3000"), "http://localhost:3000");
+  for (const bad of ["http://flowplan.example.com", "javascript:alert(1)", "file:///etc", "https://u:p@flowplan.example.com", "ftp://x", "", undefined]) assert.equal(instanceOrigin(bad), null, String(bad));
+  assert.equal(externalUrl("https://example.org/a"), "https://example.org/a");
+  assert.equal(externalUrl("mailto:a@example.org"), "mailto:a@example.org");
+  for (const bad of ["javascript:alert(1)", "file:///etc/passwd", "flowplan://open", "smb://server/share", "ms-settings:", "vbscript:x", "data:text/html,x", "https://u:p@example.org/", "", 42]) assert.equal(externalUrl(bad), null, String(bad));
+  assert.equal(instancePageUrl(`${server}/#page=1`, server), `${server}/#page=1`);
+  for (const bad of [`${server}/api/export/x`, "https://evil.example/", `${server.replace("https", "http")}/`, "https://u:p@flowplan.example.com/", "javascript:alert(1)"]) assert.equal(instancePageUrl(bad, server), null, bad);
+  assert.equal(instancePageUrl(`${server}/`, undefined), null);
+  assert.deepEqual(["new-window", "background-tab", "foreground-tab", "default", "other", "save-to-disk", undefined].map(opensOwnWindow), [true, true, true, false, false, false, false]);
+  for (const ok of ["Flowplan", "l'été", "Müller-Lüdenscheidt", "a"]) assert.equal(dictionaryWord(ok), true, ok);
+  for (const bad of ["two words", "<b>", "x".repeat(65), "-x", "x-", "1abc", "", null, "a\nb"]) assert.equal(dictionaryWord(bad), false, String(bad));
+  const main = readFileSync(join(root, "main.js"), "utf8");
+  // A link to an unknown instance asks first; nothing is added or opened before.
+  const ask = main.slice(main.indexOf("async function askAddInstance"), main.indexOf("// Files handed to the app"));
+  assert.ok(ask.indexOf("dialog.showMessageBox") < ask.indexOf("profiles.addProfile"), "asked before a profile is added");
+  assert.match(ask, /if \(response !== 0\) return;/);
+  assert.match(ask, /await checkServer\(origin\);/, "and only a real Flowplan");
+  assert.match(ask, /if \(externalUrl\(url\)\) void shell\.openExternal\(url\);/);
+  // Dropped files are checked by name and content and read only after the person said where.
+  const take = main.slice(main.indexOf("async function importFiles"), main.indexOf("// ---- Menus ----"));
+  assert.ok(take.indexOf("showMessageBox") < take.indexOf("fs.readFileSync"), "confirmed before anything is read");
+  assert.match(main, /const verdict = fileRules\.classifyFile\(\{ name, size: stat\.size, head \}\);/);
+  // New windows follow the same rules as the main window.
+  assert.match(main, /function openPageWindow\(profileId, url, bounds\) \{[\s\S]*?wireWindow\(w, profileId, \{ primary: false \}\);/);
+  // The right-click menu hands only http(s) and mailto to the system.
+  const menu = readFileSync(join(root, "context-menu.js"), "utf8");
+  assert.match(menu, /case "open-link":\s*return externalUrl\(item\.value\) && deps\.openExternal\(item\.value\);/);
+  assert.match(menu, /case "add-word":\s*return dictionaryWord\(item\.value\) && /);
+  // The instance is asked at its own origin only, with the profile's session.
+  const client = readFileSync(join(root, "instance-api.js"), "utf8");
+  assert.match(client, /if \(url\.origin !== origin\) throw new ApiError\("server"\);/);
+  assert.match(client, /redirect: "error"/);
+  assert.doesNotMatch(client, /require\("node:(fs|child_process)"\)|shell\./, "no files, no shell");
+  assert.match(main, /createInstanceApi\(\{ origin: profile\.server, fetch: \(url, init\) => ses\.fetch\(url, init\) \}\)/);
+  // Settings come in checked, whatever the page or the file says.
+  assert.match(main, /const next = appSettings\.applyPatch\(readConfig\(\), patch\);/);
+  for (const channel of ["settings-get", "settings-set", "check-updates", "capture-info", "capture-save", "capture-close", "update-state", "update-action"])
+    assert.ok(main.includes(`handle("flowplan:${channel}", `), channel);
+  assert.doesNotMatch(main, /handle\("flowplan:(settings|capture|update)[a-z-]*",[^\n]*\{ instance: true \}/, "not for the instance");
+  // Updates never open a dialog (no surprise popups while typing).
+  const updatesSource = readFileSync(join(root, "updates.js"), "utf8");
+  assert.doesNotMatch(updatesSource, /showMessageBox|showErrorBox|\bdialog\./);
+  // sign-in.js handles flowplan://sign-in only, deep-links.js the rest.
+  const signIn = readFileSync(join(root, "sign-in.js"), "utf8");
+  assert.match(signIn, /if \(!isSignInLink\(link\)\) return;/);
+  console.log("✔ Kontextmenü, Links, Fenster, Dateien und Einstellungen geprüft");
 }
 
 // E16: notifications ask only the profile's own instance with its own session
@@ -287,7 +357,7 @@ const server = "https://flowplan.example.com";
   assert.equal(strings.t("setup.connect"), "Connect");
   assert.equal(strings.t("missing.key"), "missing.key");
   // The pages ask only for words that exist.
-  for (const name of ["setup.html", "offline.html", "sign-in.html", "profiles.html"]) {
+  for (const name of ["setup.html", "offline.html", "sign-in.html", "profiles.html", "settings.html", "capture.html", "update.html"]) {
     const html = readFileSync(join(pagesDir, name), "utf8");
     for (const [, key] of html.matchAll(/data-i18n(?:-\w+)?="([^"]+)"/g)) assert.ok(strings.STRINGS[key], `${name}: ${key}`);
     assert.match(html, /script-src 'self'/, `${name}: CSP without inline scripts`);
@@ -302,5 +372,7 @@ const server = "https://flowplan.example.com";
   assert.match(ci, /test:security/, "CI runs this test");
   assert.match(ci, /test:profiles/, "CI runs the profiles test");
   assert.match(ci, /test:notifications/, "CI runs the notifications test");
+  assert.match(ci, /test:features/, "CI runs the features test");
+  assert.match(ci, /test:app/, "CI runs the app test");
   console.log("✔ CI prüft Electron und Tests");
 }

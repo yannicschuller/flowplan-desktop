@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'" />
+    <title data-i18n-title="updates.title">Update</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="toast">
+    <section id="toast" class="toast-card" role="status" aria-live="polite">
+      <img src="../build/icon.png" alt="" />
+      <div class="toast-body">
+        <strong id="title"></strong>
+        <div id="detail" class="toast-detail"></div>
+        <div id="bar" class="toast-bar" hidden><div id="fill"></div></div>
+        <div id="source" class="toast-source"></div>
+      </div>
+      <div id="actions" class="toast-actions"></div>
+    </section>
+    <script src="../strings.js"></script>
+    <script src="i18n.js"></script>
+    <script src="update-page.js"></script>
+  </body>
+</html>
