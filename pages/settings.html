@@ -28,6 +28,31 @@
           <button type="button" id="off" class="secondary" data-i18n="settings.shortcutOff">Off</button>
         </div>
         <p id="shortcut-label" class="small shortcut-status" role="status" aria-live="polite"></p>
+        <div class="row left"><button type="button" id="capture-try" class="secondary" data-i18n="settings.captureTry">Try it</button></div>
+      </section>
+
+      <section id="actions-section">
+        <h2 data-i18n="settings.actionsTitle">Quick actions</h2>
+        <p class="small" data-i18n="settings.actionsHint">More shortcuts that open the capture window ready for one thing. None is active without a shortcut.</p>
+        <div id="actions" class="actions-list"></div>
+        <p id="actions-note" class="small" hidden></p>
+        <div class="row left">
+          <select id="action-add" aria-labelledby="action-add-label">
+            <option value="" id="action-add-label" data-i18n="settings.actionAdd">Add…</option>
+            <option value="task" data-i18n="actions.task">Task</option>
+            <option value="journal" data-i18n="actions.journal">Journal entry</option>
+            <option value="bookmark" data-i18n="actions.bookmark">Bookmark</option>
+            <option value="template" data-i18n="actions.meeting">Meeting note</option>
+            <option value="note" data-i18n="actions.note">Note</option>
+          </select>
+        </div>
+      </section>
+
+      <section>
+        <h2 data-i18n="settings.queueTitle">Offline queue</h2>
+        <p class="small" id="queue-status" role="status" aria-live="polite"></p>
+        <p class="small" id="queue-storage"></p>
+        <div class="row left"><button type="button" id="queue-send" class="secondary" data-i18n="settings.queueSend">Send now</button></div>
       </section>
 
       <section>
@@ -56,6 +81,7 @@
     </main>
     <script src="../strings.js"></script>
     <script src="i18n.js"></script>
+    <script src="shortcut-keys.js"></script>
     <script src="settings-page.js"></script>
   </body>
 </html>

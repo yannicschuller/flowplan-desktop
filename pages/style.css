@@ -257,9 +257,10 @@ body.capture {
   background: var(--bg);
 }
 .capture-card {
-  display: grid;
-  grid-template-rows: auto minmax(60px, 1fr) auto auto;
-  gap: 8px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
   height: 100vh;
   padding: 12px 14px;
   border: 1px solid var(--border);
@@ -276,14 +277,280 @@ body.capture {
   margin: 0;
   border-radius: 5px;
 }
-.capture-target {
+.capture-target-button {
   margin-left: auto;
-  color: var(--muted);
+  max-width: 55%;
+  display: flex;
+  gap: 4px;
+  padding: 3px 9px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  -webkit-app-region: no-drag;
+}
+.capture-target-button span:first-child {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.capture-target-button:focus-visible,
+.capture-chip button:focus-visible,
+.tool:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+.capture-action,
+.capture-queue {
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: 999px;
+  background: var(--blue-light);
+  color: var(--blue);
+  white-space: nowrap;
+  -webkit-app-region: no-drag;
+}
+.capture-queue {
+  cursor: pointer;
+  background: #fff3bf;
+  color: #8a6100;
+}
+.capture-picker,
+.capture-recent {
+  position: absolute;
+  z-index: 5;
+  top: 44px;
+  right: 14px;
+  left: 14px;
+  max-height: 250px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  -webkit-app-region: no-drag;
+}
+.capture-recent {
+  top: auto;
+  bottom: 34px;
+}
+.capture-picker input {
+  padding: 6px 9px;
+  font-size: 13px;
+}
+.capture-picker ul,
+.capture-recent ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+}
+.capture-option {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 8px;
+  font-size: 13px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.capture-option small {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.capture-option button {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+.capture-option.active {
+  background: var(--blue-light);
+}
+.capture-option.empty {
+  color: var(--muted);
+  cursor: default;
+}
+.capture-note {
+  font-size: 11px;
+  line-height: 1.35;
+}
+.capture-editor {
+  position: relative;
+  flex: 1 1 70px;
+  min-height: 60px;
+  display: flex;
+}
+.capture-drop {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  color: var(--blue);
+  background: var(--blue-light);
+  border: 2px dashed var(--blue);
+  border-radius: 10px;
+  pointer-events: none;
+}
+.capture-chips,
+.capture-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  -webkit-app-region: no-drag;
+}
+.capture-chips:empty,
+.capture-attachments:empty {
+  display: none;
+}
+.capture-chip,
+.capture-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 9px;
+  font-size: 12px;
+  border-radius: 999px;
+  background: var(--blue-light);
+  color: var(--text);
+  max-width: 100%;
+}
+.capture-chip span,
+.capture-attachment span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.capture-chip.muted {
+  padding-right: 9px;
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--muted);
+}
+.capture-attachment {
+  background: transparent;
+  border: 1px solid var(--border);
+}
+.chip-remove,
+.chip-accept {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 50%;
+}
+.chip-accept {
+  color: #2f9e44;
+}
+.chip-remove:hover,
+.chip-accept:hover {
+  background: var(--border);
+}
+.capture-suggestion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  -webkit-app-region: no-drag;
+}
+.capture-suggestion strong {
+  font-weight: 600;
+  color: var(--muted);
+}
+.capture-chip.suggest {
+  background: #f3e8ff;
+}
+.capture-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  -webkit-app-region: no-drag;
+}
+.tool {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.tool:disabled {
+  opacity: 0.45;
+}
+.tool.recording {
+  color: #fff;
+  background: var(--danger);
+  border-color: var(--danger);
+}
+.capture-tools .capture-task {
+  margin-left: auto;
+}
+.capture-toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #2f9e44;
+  border: 1px solid #b2f2bb;
+  border-radius: 9px;
+  -webkit-app-region: no-drag;
+}
+.capture-toast.queued {
+  color: #8a6100;
+  border-color: #ffe066;
+}
+.capture-toast span {
+  flex: 1;
+}
+.capture-toast button,
+.capture-attention button,
+.capture-status button {
+  padding: 3px 10px;
+  font-size: 12px;
+}
+.capture-attention {
+  display: grid;
+  gap: 4px;
+  padding: 6px 8px;
+  font-size: 12px;
+  border: 1px solid #ffc9c9;
+  border-radius: 9px;
+  -webkit-app-region: no-drag;
+}
+.capture-attention-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.capture-attention-item span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[hidden] {
+  display: none !important;
+}
 .capture-card textarea {
+  flex: 1;
   width: 100%;
   resize: none;
   padding: 10px 12px;
@@ -425,4 +692,163 @@ body.toast {
   padding: 5px 11px;
   font-size: 12px;
   border-radius: 8px;
+}
+
+/* The screen region overlay (region.html). */
+body.region {
+  display: block;
+  min-height: 0;
+  height: 100vh;
+  overflow: hidden;
+  cursor: crosshair;
+  background: #000;
+  -webkit-app-region: no-drag;
+  user-select: none;
+}
+body.region img {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  border-radius: 0;
+  object-fit: fill;
+}
+.region-shade {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.25);
+}
+.region-box {
+  position: fixed;
+  border: 2px solid #4c6ef5;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.35);
+}
+.region-shade.selecting {
+  background: transparent;
+}
+.region-hint {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  font-size: 13px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+/* The one-time quick capture hint (hint.html) in the corner of the window. */
+body.hint {
+  display: block;
+  min-height: 0;
+  height: 100vh;
+  overflow: hidden;
+  -webkit-app-region: no-drag;
+}
+.hint-card {
+  display: grid;
+  grid-template-columns: 32px 1fr auto;
+  gap: 4px 10px;
+  height: 100vh;
+  padding: 12px 12px 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.hint-card img {
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  border-radius: 8px;
+}
+.hint-card p {
+  font-size: 12px;
+}
+.hint-actions {
+  grid-column: 2 / 4;
+  display: flex;
+  gap: 8px;
+}
+.hint-actions button {
+  padding: 4px 11px;
+  font-size: 12px;
+  border-radius: 8px;
+}
+.hint-close {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+}
+
+/* The setup's last step (setup.html?step=desktop). */
+.setup-choices {
+  display: grid;
+  gap: 12px;
+  text-align: left;
+}
+.setup-choice {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.setup-choice .row {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+.setup-choice button {
+  padding: 6px 11px;
+  font-size: 13px;
+}
+
+/* Quick actions in the settings. */
+.actions-list {
+  display: grid;
+  gap: 10px;
+}
+.action-row {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.action-row .row {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.action-row input[type="text"],
+.action-row input.action-shortcut,
+.action-row select,
+#action-add {
+  width: auto;
+  min-width: 0;
+  flex: 1 1 140px;
+  padding: 6px 9px;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.action-row button {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.action-status.conflict,
+.action-status.incomplete {
+  color: var(--danger);
 }

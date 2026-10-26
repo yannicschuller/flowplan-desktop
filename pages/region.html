@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'" />
+    <title data-i18n-title="region.title">Screen region</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="region">
+    <img id="shot" alt="" draggable="false" />
+    <div id="shade" class="region-shade"></div>
+    <div id="box" class="region-box" hidden></div>
+    <p class="region-hint" data-i18n="region.hint">Drag a region with the mouse · Enter: whole screen · Esc: cancel</p>
+    <script src="../strings.js"></script>
+    <script src="i18n.js"></script>
+    <script src="region-page.js"></script>
+  </body>
+</html>

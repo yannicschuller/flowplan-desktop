@@ -1,6 +1,7 @@
 // The app's own settings beyond profiles and notifications, in one place:
 // the tray / menu bar icon, launch at login, the quick capture shortcut,
-// the spell checker's languages and Apple's on-device model (deviceAi).
+// the spell checker's languages, Apple's on-device model (deviceAi) and
+// the quick actions (more shortcuts for the capture window, capture-actions.js).
 // They live in config.json (`settings`), are changed from the menu and from
 // pages/settings.html, and are checked here –
 // plain functions without Electron, so test/security.mjs and
@@ -47,6 +48,8 @@ function defaults(platform = process.platform) {
     // where the helper exists – it only starts when a page asks. Off, the
     // helper never runs and the instance has no window.FlowplanDesktop.ai.
     deviceAi: true,
+    // Quick actions (capture-actions.js): none until the person adds one.
+    captureActions: [],
   };
 }
 
@@ -68,6 +71,8 @@ function cleanValue(key, value, base) {
       return isShortcut(value) ? value : base[key];
     case "spellLanguages":
       return cleanLanguages(value, base[key]);
+    case "captureActions":
+      return Array.isArray(value) ? require("./capture-actions").cleanActions(value, base.captureShortcut) : base[key];
     default:
       return undefined;
   }
@@ -77,7 +82,7 @@ function settingsOf(config = {}, platform = process.platform) {
   const base = defaults(platform);
   const saved = config && typeof config.settings === "object" && config.settings ? config.settings : {};
   const result = {};
-  for (const key of Object.keys(base)) result[key] = key in saved ? cleanValue(key, saved[key], base) : base[key];
+  for (const key of Object.keys(base)) result[key] = key in saved ? cleanValue(key, saved[key], { ...base, captureShortcut: result.captureShortcut ?? base.captureShortcut }) : base[key];
   return result;
 }
 // A change from the menu or the settings page: only known keys with valid
@@ -93,6 +98,8 @@ function applyPatch(config = {}, patch = {}, platform = process.platform) {
     }
   // Hidden at login only means something when the app starts at login.
   if (!next.launchAtLogin) next.startHidden = false;
+  // A new main shortcut takes precedence over a quick action's.
+  if (patch && "captureShortcut" in patch) next.captureActions = require("./capture-actions").cleanActions(next.captureActions, next.captureShortcut);
   return next;
 }
 

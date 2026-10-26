@@ -139,6 +139,28 @@ const server = "https://flowplan.example.com";
   for (const channel of ["settings-get", "settings-set", "check-updates", "capture-info", "capture-save", "capture-close", "update-state", "update-action"])
     assert.ok(main.includes(`handle("flowplan:${channel}", `), channel);
   assert.doesNotMatch(main, /handle\("flowplan:(settings|capture|update)[a-z-]*",[^\n]*\{ instance: true \}/, "not for the instance");
+  // Quick capture's channels answer only the capture window's own page,
+  // the screen region only its overlay (guards.js fromWindow).
+  const captureChannels = [...main.matchAll(/handle\("flowplan:(capture-[a-z-]+)",/g)].map((m) => m[1]);
+  assert.ok(captureChannels.length >= 18, "the capture window's channels");
+  for (const channel of captureChannels) assert.match(main, new RegExp(`handle\\("flowplan:${channel}", [^\\n]*captureWindow\\);`), `${channel}: the capture window only`);
+  assert.match(main, /const captureWindow = \{ window: \(\) => capture\?\.window\(\) \};/);
+  assert.match(main, /window \? fromWindow\(event\.sender, from, window\(\), defaultPagesDir\)/);
+  assert.match(main, /handle\("flowplan:region-done", [\s\S]*?\{ window: \(\) => screenShots\.window\(\) \}\);/);
+  const fakeWindow = { webContents: {}, isDestroyed: () => false };
+  assert.equal(guards.fromWindow(fakeWindow.webContents, page("capture.html"), fakeWindow, pagesDir), true);
+  assert.equal(guards.fromWindow({}, page("capture.html"), fakeWindow, pagesDir), false, "another window of the app");
+  assert.equal(guards.fromWindow(fakeWindow.webContents, `${server}/`, fakeWindow, pagesDir), false, "not its own page");
+  assert.equal(guards.fromWindow(fakeWindow.webContents, page("capture.html"), null, pagesDir), false, "no window");
+  // Its session is its own and in memory; the microphone alone for it.
+  const captureSource = readFileSync(join(root, "capture.js"), "utf8");
+  assert.match(captureSource, /const PARTITION = "flowplan-capture";/, "not persisted, not a profile's");
+  assert.match(captureSource, /capturePermissionAllowed\(permission, details, !!window && wc === window\.webContents && deps\.isOwnPage\(wc\.getURL\(\)\)\)/);
+  // Links on the clipboard are previewed by the instance, never fetched here.
+  assert.doesNotMatch(captureSource, /\bfetch\(|net\.request|https?\.get\(/, "no requests of its own");
+  // The queue is written with the system's key store when there is one.
+  assert.match(main, /safeStorage\.encryptString/);
+  assert.match(main, /getSelectedStorageBackend\?\.\(\) === "basic_text"\) return \{ available: false \}/, "Linux without a key store counts as none");
   // Updates never open a dialog (no surprise popups while typing).
   const updatesSource = readFileSync(join(root, "updates.js"), "utf8");
   assert.doesNotMatch(updatesSource, /showMessageBox|showErrorBox|\bdialog\./);
@@ -365,7 +387,7 @@ const server = "https://flowplan.example.com";
   assert.equal(strings.t("setup.connect"), "Connect");
   assert.equal(strings.t("missing.key"), "missing.key");
   // The pages ask only for words that exist.
-  for (const name of ["setup.html", "offline.html", "sign-in.html", "profiles.html", "settings.html", "capture.html", "update.html"]) {
+  for (const name of ["setup.html", "offline.html", "sign-in.html", "profiles.html", "settings.html", "capture.html", "update.html", "region.html", "hint.html"]) {
     const html = readFileSync(join(pagesDir, name), "utf8");
     for (const [, key] of html.matchAll(/data-i18n(?:-\w+)?="([^"]+)"/g)) assert.ok(strings.STRINGS[key], `${name}: ${key}`);
     assert.match(html, /script-src 'self'/, `${name}: CSP without inline scripts`);

@@ -70,6 +70,19 @@ function permissionAllowed(permission, details, fromInstance) {
   }
   return false;
 }
+// The capture window's own session: the microphone alone (a voice note),
+// only for the capture page itself – nothing else, never a camera or screen.
+function capturePermissionAllowed(permission, details, fromCaptureWindow) {
+  if (!fromCaptureWindow) return false;
+  if (permission !== "media") return false;
+  const types = details && details.mediaTypes;
+  return Array.isArray(types) && types.length === 1 && types[0] === "audio";
+}
+// Channels of one window of the app (the capture window, the screen region
+// overlay): only that window's own page may call them.
+function fromWindow(sender, senderUrl, window, pagesDir) {
+  return !!window && !window.isDestroyed?.() && sender === window.webContents && isOwnPage(senderUrl, pagesDir);
+}
 // FLOWPLAN_UPDATE_URL: only https (http only for loopback addresses, used by
 // test/update.mjs) – an update source is trusted with the whole app.
 function updateFeedUrl(value) {
@@ -165,6 +178,8 @@ module.exports = {
   allowedInWindow,
   isSignInRedirect,
   permissionAllowed,
+  capturePermissionAllowed,
+  fromWindow,
   updateFeedUrl,
   classifyHealth,
   defaultPagesDir: path.join(__dirname, "pages"),

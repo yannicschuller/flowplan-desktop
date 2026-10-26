@@ -6,10 +6,10 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, readdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { standIn, INBOX, WORKSPACE, SPACE, PAGE, TASK_PAGE, PNG, USER } from "./stand-in.mjs";
+import { standIn, INBOX, WORKSPACE, SPACE, PAGE, TASK_PAGE, PNG, USER, PROJECTS, JOURNAL } from "./stand-in.mjs";
 
 const require = createRequire(import.meta.url);
 const strings = require("../strings.js");
@@ -23,14 +23,22 @@ const autostart = require("../autostart.js");
 const print = require("../print.js");
 const updates = require("../updates.js");
 const { trayItems } = require("../tray.js");
-const { messageFor } = require("../capture.js");
+const { messageFor, clipboardLink, audioOk, cleanInput } = require("../capture.js");
+const targetRules = require("../capture-targets.js");
+const queueRules = require("../capture-queue.js");
+const historyRules = require("../capture-history.js");
+const captureStore = require("../capture-store.js");
+const actionRules = require("../capture-actions.js");
+const onboarding = require("../onboarding.js");
+const screenRules = require("../screen-capture.js");
+const guards = require("../guards.js");
 strings.setLocale("en");
 const { t } = strings;
 const server = "https://flowplan.example.com";
 
 // Settings: defaults per system, only valid values, unknown keys dropped.
 {
-  assert.deepEqual(settings.settingsOf({}, "darwin"), { tray: true, launchAtLogin: false, startHidden: false, captureShortcut: "CommandOrControl+Shift+Space", spellLanguages: ["de-DE", "en-US", "fr-FR"], deviceAi: true });
+  assert.deepEqual(settings.settingsOf({}, "darwin"), { tray: true, launchAtLogin: false, startHidden: false, captureShortcut: "CommandOrControl+Shift+Space", spellLanguages: ["de-DE", "en-US", "fr-FR"], deviceAi: true, captureActions: [] });
   assert.equal(settings.settingsOf({}, "win32").tray, false, "off on Windows");
   assert.equal(settings.settingsOf({}, "linux").tray, false, "off on Linux");
   const saved = settings.settingsOf({ settings: { tray: "yes", launchAtLogin: true, captureShortcut: "rm -rf", spellLanguages: ["xx", "fr-FR"], partition: "persist:x" } }, "linux");
@@ -46,7 +54,7 @@ const server = "https://flowplan.example.com";
   for (const ok of ["CommandOrControl+Shift+Space", "Alt+Shift+K", "Control+Alt+F12", "Super+Plus", "Ctrl+Shift+1"]) assert.equal(settings.isShortcut(ok), true, ok);
   for (const bad of ["Space", "K", "Shift+K", "Ctrl+", "Ctrl+Ctrl+K", "Hyper+K", "Ctrl+Shift+Space+K", "", null, "Ctrl+" + "K".repeat(80)]) assert.equal(settings.isShortcut(bad), false, String(bad));
   const patched = settings.applyPatch({ settings: { launchAtLogin: true, startHidden: true } }, { launchAtLogin: false, tray: true, evil: 1 }, "linux");
-  assert.deepEqual(patched, { tray: true, launchAtLogin: false, startHidden: false, captureShortcut: settings.DEFAULT_SHORTCUT, spellLanguages: ["de-DE", "en-US", "fr-FR"], deviceAi: true }, "hidden only with launch at login");
+  assert.deepEqual(patched, { tray: true, launchAtLogin: false, startHidden: false, captureShortcut: settings.DEFAULT_SHORTCUT, spellLanguages: ["de-DE", "en-US", "fr-FR"], deviceAi: true, captureActions: [] }, "hidden only with launch at login");
   assert.equal(settings.applyPatch({}, { captureShortcut: "Nope" }).captureShortcut, settings.DEFAULT_SHORTCUT);
   assert.equal(settings.shortcutLabel("CommandOrControl+Shift+Space", "darwin"), "⌘⇧Space");
   assert.equal(settings.shortcutLabel("CommandOrControl+Shift+Space", "win32"), "Ctrl+Shift+Space");
@@ -372,5 +380,289 @@ const server = "https://flowplan.example.com";
   assert.equal(messageFor(new Error("boom"), { t }), t("capture.failed"));
   assert.deepEqual(api.todayTasks({ tasks: [{ pageId: "bad", due: "2000-01-01" }, { pageId: PAGE, due: "2000-01-01", checked: true }, { pageId: TASK_PAGE, due: "2000-01-01", text: "x\u0000y" }] }, "2026-01-01").tasks.map((x) => x.text), ["x y"], "only the fields used, cleaned");
   console.log("✔ Anfragen an die Instanz");
+}
+
+// Quick capture: where it goes – the inbox first, recently used next, never
+// encrypted pages; remembered per profile (ids only).
+{
+  const list = targetRules.normalizeTargets({
+    inbox: { id: INBOX, name: "Eingang" },
+    targets: [
+      { id: INBOX, kind: "database", name: "Eingang", fills: { date: "Fällig", tags: true, person: null }, templates: [{ id: PAGE, name: "Besprechung" }, { id: "bad", name: "x" }] },
+      { id: PROJECTS, kind: "database", name: "Projekte\u0000", space: "Arbeit" },
+      { id: PAGE, kind: "document", name: "Notizen" },
+      { id: JOURNAL, kind: "journal", name: "Tagebuch" },
+      { id: TASK_PAGE, kind: "document", name: "", encrypted: true },
+      { id: USER, kind: "whiteboard", name: "Board" },
+      { id: "../x", kind: "database", name: "evil" },
+    ],
+    encryptedExcluded: 3,
+    voice: true,
+    suggest: { server: false, device: true, prefer: "device" },
+  });
+  assert.deepEqual(list.targets.map((x) => x.name), ["Eingang", "Projekte", "Notizen", "Tagebuch"], "encrypted, unknown kinds and odd ids fall away");
+  assert.deepEqual(list.targets[0].templates, [{ id: PAGE, name: "Besprechung", default: false }]);
+  assert.equal(list.encryptedExcluded, 3);
+  assert.deepEqual(list.suggest, { server: false, device: true, prefer: "device" });
+  assert.equal(targetRules.normalizeTargets({ suggest: { server: false, device: false } }).suggest, null, "AI off: no suggestion");
+  let recent = targetRules.rememberTarget({}, "a1", JOURNAL);
+  recent = targetRules.rememberTarget(recent, "a1", PROJECTS);
+  recent = targetRules.rememberTarget(recent, "a1", JOURNAL);
+  recent = targetRules.rememberTarget(recent, "a1", "../evil");
+  assert.deepEqual(recent, { a1: [JOURNAL, PROJECTS] }, "newest first, once, only ids");
+  const ordered = targetRules.orderTargets(list, targetRules.recentOf(recent, "a1"));
+  assert.deepEqual(ordered.map((x) => x.id), ["inbox", JOURNAL, PROJECTS, PAGE], "the inbox, the recent, then databases, journals, pages");
+  assert.equal(ordered[0].pageId, INBOX);
+  assert.equal(targetRules.initialTarget(ordered, [JOURNAL]), JOURNAL, "the last one used");
+  assert.equal(targetRules.initialTarget(ordered, ["11111111-1111-4111-8111-000000000000"]), "inbox", "gone: the inbox");
+  assert.deepEqual(targetRules.filterTargets(ordered, "tag").map((x) => x.id), [JOURNAL]);
+  assert.deepEqual(targetRules.filterTargets(ordered, "arbeit proj").map((x) => x.id), [PROJECTS], "the space counts too");
+  assert.equal(targetRules.pageOf(ordered, "inbox"), INBOX);
+  assert.equal(targetRules.pageOf(ordered, "x"), null);
+  console.log("✔ Ziele beim Erfassen");
+}
+
+// What the capture window sends is checked again; chips the person removed
+// travel as their ids (the instance keeps them as text).
+{
+  const input = cleanInput({ text: "x".repeat(30_000), task: "yes", targetId: "../x", literal: ["date:morgen", 42, "x".repeat(400)], attachments: ["not-an-id"], link: { url: "javascript:alert(1)" }, cells: { prio: "Hoch", big: "x".repeat(5000) } });
+  assert.equal(input.text.length, 20_000);
+  assert.equal(input.task, false);
+  assert.equal(input.targetId, "inbox");
+  assert.deepEqual(input.literal, ["date:morgen"]);
+  assert.deepEqual(input.attachments, []);
+  assert.equal(input.link, null, "only http(s) links");
+  assert.deepEqual(input.cells, { prio: "Hoch" });
+  assert.equal(cleanInput({ link: { url: "https://example.org/a", title: "T", image: "http://x/i.png" } }).link.image, "", "images over https only");
+  assert.equal(clipboardLink("  https://example.org/a?b=1 "), "https://example.org/a?b=1");
+  for (const bad of ["https://example.org/a b", "ftp://x", "https://u:p@x.org/", "Text https://x.org", ""]) assert.equal(clipboardLink(bad), null, bad);
+  const webm = Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(40)]);
+  assert.equal(audioOk(webm, "audio/webm;codecs=opus"), true);
+  assert.equal(audioOk(webm, "text/html"), false);
+  assert.equal(audioOk(Buffer.from("<script>alert(1)</script>"), "audio/webm"), false, "the content must look like audio");
+  console.log("✔ Eingaben des Erfassen-Fensters geprüft");
+}
+
+// The offline queue: kept encrypted (or said plainly that it is not), sent
+// later with the same key and body, backing off; refused ones stay.
+{
+  const dir = mkdtempSync(join(tmpdir(), "flowplan-queue-"));
+  // A stand-in for safeStorage: reversible, not plain.
+  const cipher = { available: true, encrypt: (text) => Buffer.from(text).map((b) => b ^ 0x5a), decrypt: (buffer) => Buffer.from(buffer).map((b) => b ^ 0x5a).toString() };
+  const store = captureStore.createStore({ dir, cipher });
+  const item = queueRules.newItem({ fields: { text: "Geheimer Gedanke", targetId: "inbox" }, files: [] }, { profileId: "a1", title: "Geheimer Gedanke", now: 1000 });
+  store.save("a1", { queue: [item], history: [] });
+  const raw = readFileSync(join(dir, "a1.json"), "utf8");
+  assert.doesNotMatch(raw, /Geheimer/, "encrypted at rest");
+  assert.equal(JSON.parse(raw).encrypted, true);
+  assert.deepEqual(store.load("a1").queue[0], item, "read back unchanged: the same key and boundary");
+  assert.equal(store.encrypted(), true);
+  // Without a key store: plain, and the settings say so.
+  const plain = captureStore.createStore({ dir, cipher: { available: false } });
+  plain.save("b2", { queue: [item] });
+  assert.equal(JSON.parse(readFileSync(join(dir, "b2.json"), "utf8")).encrypted, false);
+  assert.equal(plain.encrypted(), false);
+  // An encrypted file without the key store is kept aside, never overwritten.
+  assert.deepEqual(plain.load("a1"), { queue: [], history: [] });
+  assert.ok(readdirSync(dir).some((f) => f.startsWith("a1.json.") && f.endsWith(".unreadable")), "kept for later");
+  assert.throws(() => store.save("../x", { queue: [] }), /invalid profile id/);
+  // Due, backoff, wake-up.
+  assert.deepEqual(queueRules.dueItems([item], 999), []);
+  assert.deepEqual(queueRules.dueItems([item], 1000), [item]);
+  assert.deepEqual(queueRules.BACKOFF.slice(0, 3), [5_000, 15_000, 30_000]);
+  assert.equal(queueRules.backoff(99), 900_000, "at most every 15 minutes");
+  let queue = queueRules.afterFailure([item], item.id, { kind: "offline" }, 2000);
+  assert.equal(queue[0].nextAt, 7000);
+  assert.equal(queue[0].attempts, 1);
+  assert.equal(queueRules.wakeUp(queue, 3000)[0].nextAt, 3000, "back online: due now");
+  const refused = queueRules.afterFailure([item], item.id, { kind: "rejected", status: 404, detail: "Seite nicht gefunden." }, 2000);
+  assert.equal(refused[0].failed, true, "refused for good: needs attention, stays");
+  assert.equal(refused[0].lastError, "Seite nicht gefunden.");
+  assert.deepEqual(queueRules.dueItems(refused, 1e12), []);
+  assert.deepEqual(queueRules.summary(refused), { waiting: 0, failed: 1 });
+  for (const kind of ["offline", "server", "signed-out", "in-progress"]) assert.equal(queueRules.retryable({ kind }), true, kind);
+  assert.equal(queueRules.retryable({ kind: "rejected", status: 429 }), true);
+  assert.equal(queueRules.retryable({ kind: "too-large" }), false);
+  // Draining: a lost answer is retried with the same key and body; the
+  // instance (lib/idempotency.ts) answers the retry from its store.
+  const seen = [];
+  const applied = new Map();
+  let lose = true;
+  const send = async (i) => {
+    seen.push([i.key, JSON.stringify(i.payload)]);
+    if (!applied.has(i.key)) applied.set(i.key, { kind: "record", pageId: INBOX, rowId: PAGE });
+    if (lose) {
+      lose = false;
+      throw Object.assign(new Error("socket hang up"), { kind: "offline" });
+    }
+    return applied.get(i.key);
+  };
+  const second = queueRules.newItem({ fields: { text: "Zweite" }, files: [] }, { profileId: "a1", now: 1500 });
+  let result = await queueRules.drain([item, second], send, { now: () => 5000 });
+  assert.equal(result.sent.length, 0, "a connection error stops the round");
+  assert.equal(result.queue.length, 2);
+  result = await queueRules.drain(queueRules.wakeUp(result.queue, 6000), send, { now: () => 6000 });
+  assert.deepEqual(result.sent.map((s) => s.item.id), [item.id, second.id], "oldest first");
+  assert.deepEqual(result.queue, []);
+  assert.equal(seen.filter(([key]) => key === item.key).length, 2, "the first was sent twice");
+  assert.equal(new Set(seen.filter(([key]) => key === item.key).map(([, body]) => body)).size, 1, "with the same body");
+  assert.equal(applied.size, 2, "and saved once each");
+  // Limits: refused rather than dropping something older.
+  const big = queueRules.newItem({ fields: {}, files: [{ name: "a", type: "image/png", data: "x".repeat(queueRules.MAX_QUEUED_BYTES + 1) }] }, { profileId: "a1" });
+  assert.throws(() => queueRules.enqueue([], big), (e) => e.kind === "queue-full");
+  assert.match(messageFor({ kind: "queue-full" }, { t }), /queue is full/);
+  console.log("✔ Warteschlange ohne Verbindung: verschlüsselt, ohne Doppel");
+}
+
+// "Zuletzt erfasst" and "Rückgängig" for ten seconds.
+{
+  let history = [];
+  for (let i = 0; i < 25; i++) history = historyRules.addEntry(history, { id: `e${i}`, title: `Notiz ${i}\u0007`, target: "Eingang", at: 1000 + i, url: `${server}/#page=${PAGE}`, undo: { kind: "record", pageId: PAGE, rowId: INBOX } });
+  assert.equal(history.length, 20, "the last twenty");
+  assert.equal(history[0].title, "Notiz 24", "newest first, cleaned");
+  assert.equal(historyRules.canUndo(history[0], 1024 + 9_999), true);
+  assert.equal(historyRules.canUndo(history[0], 1024 + 10_001), false, "ten seconds");
+  history = historyRules.markUndone(history, "e24");
+  assert.equal(historyRules.canUndo(history[0], 1024), false, "once");
+  assert.equal(historyRules.visible(history)[0].id, "e23", "undone ones are not listed");
+  // A queued one: undone by leaving the queue; sent, it gets its place.
+  let queued = historyRules.addEntry([], { id: "q", title: "Offline", target: "Eingang", at: 5000, queued: true });
+  assert.equal(historyRules.canUndo(queued[0], 5000), true);
+  queued = historyRules.settle(queued, "q", { url: `${server}/#page=${INBOX}`, undo: { kind: "record", pageId: INBOX, rowId: PAGE } });
+  assert.deepEqual([queued[0].queued, !!queued[0].url], [false, true]);
+  assert.deepEqual(historyRules.markUndone(historyRules.addEntry([], { id: "q", title: "x", queued: true }), "q"), [], "a queued one undone is gone");
+  console.log("✔ Zuletzt erfasst und Rückgängig");
+}
+
+// Quick actions: none active by default; checked; one shortcut, one action.
+{
+  assert.deepEqual(settings.settingsOf({}).captureActions, [], "only the main shortcut by default");
+  const presets = actionRules.presets(t);
+  assert.deepEqual(presets.map((p) => [p.name, p.shortcut]), [["Task", null], ["Journal entry", null], ["Bookmark", null], ["Meeting note", null]]);
+  const list = actionRules.cleanActions(
+    [
+      { id: "task", kind: "task", name: "Aufgabe", shortcut: "Alt+Shift+T" },
+      { id: "task", kind: "task", name: "Doppelt" },
+      { id: "j", kind: "journal", name: "Journal", shortcut: "Alt+Shift+T", target: JOURNAL },
+      { id: "m", kind: "template", name: "Besprechung", shortcut: "CmdOrCtrl+Shift+Space", target: PROJECTS, template: PAGE, prefix: "Besprechung: " },
+      { id: "x", kind: "exec", name: "rm -rf" },
+      { id: "BAD ID", kind: "note" },
+      { id: "b", kind: "bookmark", shortcut: "Shift+B", target: "../x" },
+    ],
+    "CommandOrControl+Shift+Space",
+  );
+  assert.deepEqual(list.map((a) => [a.id, a.shortcut, a.target]), [["task", "Alt+Shift+T", "inbox"], ["j", null, JOURNAL], ["m", null, PROJECTS], ["b", null, "inbox"]], "a shortcut stays with the first, never the main one");
+  assert.equal(actionRules.normalize("CmdOrCtrl+Shift+Space"), actionRules.normalize("Shift+CommandOrControl+Space"));
+  assert.equal(actionRules.problemOf({ kind: "journal", target: null }), "journal", "a journal must be chosen");
+  assert.equal(actionRules.problemOf({ kind: "template", target: null }), "database");
+  assert.deepEqual(actionRules.presetFor(list[2]), { actionId: "m", kind: "template", name: "Besprechung", target: PROJECTS, template: PAGE, task: false, prefix: "Besprechung: ", paste: false });
+  assert.equal(actionRules.presetFor({ ...list[3] }).paste, true, "a bookmark starts with the clipboard");
+  assert.equal(actionRules.newActionId("task", list), "task-2");
+  // The settings keep them; a new main shortcut wins over an action's.
+  const saved = settings.applyPatch({ settings: { captureActions: [{ id: "a", kind: "note", shortcut: "Alt+Shift+N" }] } }, { captureShortcut: "Alt+Shift+N" });
+  assert.equal(saved.captureActions[0].shortcut, null);
+  console.log("✔ Schnellaktionen");
+}
+
+// First run and the one-time hint.
+{
+  assert.deepEqual(onboarding.setupDefaults("darwin"), { capture: true, captureShortcut: "CommandOrControl+Shift+Space", tray: true, launchAtLogin: false, startHidden: false });
+  assert.deepEqual(onboarding.setupDefaults("win32"), { capture: true, captureShortcut: "CommandOrControl+Shift+Space", tray: false, launchAtLogin: false, startHidden: false }, "as today's settings defaults");
+  assert.deepEqual(onboarding.setupPatch({ capture: false, tray: true, launchAtLogin: false, startHidden: true }, {}), { tray: true, launchAtLogin: false, startHidden: false, captureShortcut: null }, "hidden only with launch at login");
+  assert.deepEqual(onboarding.setupPatch({ capture: true }, { captureShortcut: null }), { captureShortcut: "CommandOrControl+Shift+Space" });
+  assert.deepEqual(onboarding.setupPatch({}, {}), {}, "skipped: nothing changes");
+  // A new installation: the step after the first profile, then never the hint.
+  let config = { profiles: [] };
+  config = { ...config, onboarding: onboarding.afterFirstProfile(config, 0), profiles: [{ id: "a" }] };
+  assert.equal(onboarding.showSetupStep(config), true);
+  assert.equal(onboarding.showHint(config, { captureShortcut: "x" }), false);
+  config = { ...config, onboarding: onboarding.setupFinished(config) };
+  assert.equal(onboarding.showSetupStep(config), false);
+  assert.equal(onboarding.showHint(config, { captureShortcut: "x" }), false);
+  assert.equal(onboarding.afterFirstProfile({ onboarding: {} }, 1).setupPending, false, "a second profile: no step");
+  // Someone from before: the hint, once; not after a capture or without a shortcut.
+  const old = { profiles: [{ id: "a" }] };
+  assert.equal(onboarding.showHint(old, { captureShortcut: "x" }), true);
+  assert.equal(onboarding.showHint(old, { captureShortcut: null }), false);
+  assert.equal(onboarding.showHint({ ...old, onboarding: onboarding.hintDismissed(old) }, { captureShortcut: "x" }), false);
+  assert.equal(onboarding.showHint({ ...old, onboarding: onboarding.captureUsed(old) }, { captureShortcut: "x" }), false);
+  assert.equal(onboarding.showHint({ server: "https://x.example" }, { captureShortcut: "x" }), true, "a single address of an old version counts");
+  assert.equal(onboarding.showHint({}, { captureShortcut: "x" }), false, "nothing set up yet");
+  console.log("✔ Einrichtung und einmaliger Hinweis");
+}
+
+// Screen regions and what the capture window's session may.
+{
+  assert.deepEqual(screenRules.screencaptureArgs("/tmp/x.png"), ["-i", "-x", "-t", "png", "/tmp/x.png"]);
+  assert.equal(screenRules.permissionVerdict("granted"), "ok");
+  assert.equal(screenRules.permissionVerdict("not-determined"), "ok", "the system asks");
+  assert.equal(screenRules.permissionVerdict("denied"), "denied");
+  assert.equal(screenRules.permissionVerdict("restricted"), "denied");
+  assert.deepEqual(screenRules.regionFromDrag({ x: 300, y: 200 }, { x: 100, y: 50 }, { width: 1000, height: 800 }), { x: 100, y: 50, width: 200, height: 150 });
+  assert.deepEqual(screenRules.regionFromDrag({ x: -20, y: 10 }, { x: 2000, y: 900 }, { width: 1000, height: 800 }), { x: 0, y: 10, width: 1000, height: 790 }, "inside the screen");
+  assert.equal(screenRules.regionFromDrag({ x: 1, y: 1 }, { x: 3, y: 90 }, { width: 100, height: 100 }), null, "a click is no region");
+  assert.deepEqual(screenRules.imageRect({ x: 10, y: 20, width: 100, height: 50 }, { width: 2000, height: 1600 }, { width: 1000, height: 800 }), { x: 20, y: 40, width: 200, height: 100 }, "at the display's scale");
+  assert.match(screenRules.fileName(new Date(2026, 9, 26, 9, 5, 3)), /^Bildschirm 2026-10-26 09\.05\.03\.png$/);
+  assert.equal(guards.capturePermissionAllowed("media", { mediaTypes: ["audio"] }, true), true, "the microphone for a voice note");
+  assert.equal(guards.capturePermissionAllowed("media", { mediaTypes: ["video"] }, true), false, "never the camera");
+  assert.equal(guards.capturePermissionAllowed("media", { mediaTypes: ["audio", "video"] }, true), false);
+  assert.equal(guards.capturePermissionAllowed("display-capture", {}, true), false);
+  assert.equal(guards.capturePermissionAllowed("notifications", {}, true), false);
+  assert.equal(guards.capturePermissionAllowed("media", { mediaTypes: ["audio"] }, false), false, "only the capture window");
+  console.log("✔ Bildschirmausschnitt und Mikrofon");
+}
+
+// The tray: captures waiting, recently captured.
+{
+  const items = trayItems({ capture: { queue: { waiting: 2, failed: 1 }, history: [{ id: "e1", title: "Angebot schreiben", target: "Eingang", queued: false }, { id: "e2", title: "x".repeat(80), target: "Projekte", queued: true }] }, profiles: [] }, t);
+  assert.deepEqual(items.slice(0, 4).map((i) => i.id), ["tray-capture", "tray-capture-queue", "tray-capture-failed", "tray-captured"]);
+  assert.equal(items[1].label, "2 waiting for a connection – send now");
+  assert.equal(items[1].action, "send-queue");
+  const recent = items[3].submenu;
+  assert.deepEqual(recent.map((e) => [e.label.length <= 50, e.sublabel, e.value]), [[true, "Eingang", "e1"], [true, "Projekte", "e2"]]);
+  assert.match(recent[1].label, /^⏳ /, "waiting ones marked");
+  assert.ok(!trayItems({ capture: { queue: { waiting: 0, failed: 0 }, history: [] }, profiles: [] }, t).some((i) => i.id?.startsWith("tray-capture-") || i.id === "tray-captured"));
+  console.log("✔ Symbol: Warteschlange und zuletzt erfasst");
+}
+
+// Quick capture against the stand-in: targets, preview, save with its key
+// (JSON and multipart, the same bytes on a retry), undo, link preview,
+// transcription, AI suggestion; an older instance without the endpoints.
+{
+  const instance = await standIn();
+  const client = api.createInstanceApi({ origin: instance.origin, fetch });
+  const targets = targetRules.normalizeTargets(await client.captureTargets());
+  assert.deepEqual(targets.targets.map((x) => x.kind), ["database", "database", "document", "journal"]);
+  const preview = await client.capturePreview({ targetId: "inbox", text: "Angebot morgen #kunde", today: "2026-10-26", literal: ["tag:#kunde"] });
+  assert.deepEqual(preview.chips.map((c) => c.kind), ["date"], "a removed chip stays text");
+  const item = queueRules.newItem({ fields: { targetId: PROJECTS, text: "Mit Bild", literal: ["date:morgen"], task: false, today: "2026-10-26" }, files: [{ name: "a.png", type: "image/png", data: PNG.toString("base64") }] }, { profileId: "a1" });
+  const first = await client.captureSave(item);
+  const again = await client.captureSave(item);
+  assert.deepEqual(again, first, "a retry gets the stored answer");
+  assert.equal(instance.state.saved.length, 1, "saved once");
+  const [a, b] = instance.to("/api/capture/save");
+  assert.equal(a.headers["idempotency-key"], item.key);
+  assert.ok(a.body.equals(b.body), "byte for byte the same body");
+  assert.equal(a.headers["content-type"], `multipart/form-data; boundary=${item.boundary}`);
+  assert.deepEqual(instance.state.saved[0].fields.literal, '["date:morgen"]', "lists as JSON in multipart");
+  assert.deepEqual(instance.state.saved[0].files.map((f) => f.name), ["a.png"]);
+  const json = queueRules.newItem({ fields: { targetId: "inbox", text: "Nur Text", today: "2026-10-26" }, files: [] }, { profileId: "a1" });
+  await client.captureSave(json);
+  assert.match(instance.to("/api/capture/save").at(-1).headers["content-type"], /^application\/json/);
+  assert.deepEqual(await client.captureUndo({ kind: "record", pageId: PROJECTS, rowId: first.rowId }), { undone: true });
+  assert.deepEqual(await client.linkPreview("https://example.org/a"), { url: "https://example.org/a", title: "Ein guter Artikel", provider: "Example News", description: "Worum es geht", image: "" });
+  assert.equal(instance.to("/api/embed")[0].query.url, "https://example.org/a", "the instance fetches, not the app");
+  assert.deepEqual(await client.transcribe(INBOX, { name: "a.webm", type: "audio/webm", bytes: Buffer.alloc(10) }), { text: "Diktierter Gedanke" });
+  await assert.rejects(client.transcribe("../x", { name: "a", type: "audio/webm", bytes: Buffer.alloc(1) }), (e) => e.kind === "no-inbox");
+  assert.equal((await client.captureSuggest({ text: "Angebot", today: "2026-10-26" })).suggestion.targetId, PROJECTS);
+  // 409 of a key still running: again shortly.
+  instance.state.status["/api/capture/save"] = 409;
+  await assert.rejects(client.captureSave(json), (e) => e.kind === "rejected" && e.status === 409);
+  delete instance.state.status["/api/capture/save"];
+  instance.state.legacy = true;
+  assert.equal(await client.captureTargets(), null, "an older instance: only the inbox");
+  await instance.stop();
+  await assert.rejects(client.captureSave(json), (e) => e.kind === "offline" && queueRules.retryable(e));
+  console.log("✔ Schnell erfassen gegen die Instanz");
 }
 console.log("features: ok");

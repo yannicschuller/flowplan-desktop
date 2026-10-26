@@ -3,8 +3,18 @@
 // at fixed addresses of its own origin. The endpoints are the web app's own:
 //
 //   GET  /api/bootstrap            the person's workspaces and spaces
-//   GET  /api/capture?workspace=…  the databases to capture into and the default (the inbox)
-//   POST /api/command              capture.record – quick capture, as in the web app
+//   GET  /api/capture/targets      where quick capture can save (inbox, databases,
+//                                  pages, journals – never end-to-end encrypted ones)
+//   POST /api/capture/preview      the shorthand of a text as chips (#tag @person …)
+//   POST /api/capture/save         a capture (JSON or multipart), with an Idempotency-Key
+//   POST /api/capture/undo         takes one back (a record to the trash, blocks removed)
+//   GET  /api/embed?url=…          the preview of a link (fetched by the instance, SSRF-safe)
+//   POST /api/transcribe           a voice note as text (the instance's own Whisper)
+//   POST /api/ai/capture/suggest   an AI suggestion (or the prompt for the Mac's model)
+//   POST /api/ai/capture/check     the Mac model's answer, checked by the instance
+//   GET  /api/capture?workspace=…  the databases to capture into and the default
+//                                  (older instances without /api/capture/targets)
+//   POST /api/command              capture.record – quick capture of older instances
 //   GET  /api/tasks?workspace=…    "My tasks" – today's for the tray
 //   POST /api/upload               an image or PDF for the inbox record
 //   POST /api/pages/<id>/import-markdown   Markdown or text files as inbox records
@@ -36,8 +46,12 @@ class ApiError extends Error {
     this.detail = detail;
   }
 }
-function kindOf(status) {
-  if (status === 401 || status === 403) return "signed-out";
+function kindOf(status, data) {
+  // An Idempotency-Key whose first request is still running: again shortly.
+  if (status === 409 && data?.code === "idempotency_in_progress") return "in-progress";
+  if (status === 401) return "signed-out";
+  // 403 is also "not allowed here" (AI off, no permission): signed out only without a message.
+  if (status === 403) return data?.error && !/anmelden|sign in/i.test(data.error) ? "rejected" : "signed-out";
   if (status === 413) return "too-large";
   if (status >= 400 && status < 500) return "rejected";
   return "server";
@@ -113,8 +127,8 @@ function pageAddress(origin, pageId, rowId) {
 
 // multipart/form-data built by hand: the body has a known length, which
 // the instance asks for before it reads anything (lib/upload-safety.ts).
-function multipart(fields = {}, files = []) {
-  const boundary = `----flowplan${randomUUID().replace(/-/g, "")}`;
+// A queued capture passes its own boundary: every retry is the same body.
+function multipart(fields = {}, files = [], boundary = `----flowplan${randomUUID().replace(/-/g, "")}`) {
   const parts = [];
   const quote = (v) => String(v).replace(/["\r\n\\]/g, "_");
   for (const [name, value] of Object.entries(fields))
@@ -191,12 +205,14 @@ function zipStore(entries) {
 
 function createInstanceApi({ origin, fetch }) {
   if (!origin) throw new ApiError("no-profile");
-  async function request(path, { method = "GET", json, body, contentType, timeout = TIMEOUT } = {}) {
+  async function request(path, { method = "GET", json, body, contentType, timeout = TIMEOUT, key } = {}) {
     const url = new URL(path, origin);
     if (url.origin !== origin) throw new ApiError("server");
     const headers = { Accept: "application/json" };
     // The instance checks the origin of every change (lib/auth.ts checkOrigin).
     if (method !== "GET") headers.Origin = origin;
+    // The same key for every attempt of one change (lib/idempotency.ts).
+    if (key) headers["Idempotency-Key"] = key;
     if (json !== undefined) {
       headers["Content-Type"] = "application/json";
       body = JSON.stringify(json);
@@ -209,7 +225,7 @@ function createInstanceApi({ origin, fetch }) {
     }
     if (response.url && new URL(response.url).origin !== origin) throw new ApiError("server", response.status);
     const data = await response.json().catch(() => null);
-    if (!response.ok) throw new ApiError(kindOf(response.status), response.status, text(data?.error, 300));
+    if (!response.ok) throw new ApiError(kindOf(response.status, data), response.status, text(data?.error, 300));
     if (data === null) throw new ApiError("server", response.status);
     return data;
   }
@@ -271,6 +287,61 @@ function createInstanceApi({ origin, fetch }) {
       const result = await request("/api/command", { method: "POST", json: command });
       const rowId = isId(result?.rowId) ? result.rowId : command.rowId;
       return { ...target, rowId, url: pageAddress(origin, target.pageId, rowId) };
+    },
+    // ---- Quick capture (instances with /api/capture/targets) ----
+    // null from an older instance: it has only the inbox (capture() above).
+    async captureTargets() {
+      try {
+        return await request("/api/capture/targets");
+      } catch (e) {
+        if (e.kind === "rejected" && e.status === 404) return null;
+        throw e;
+      }
+    },
+    capturePreview(input) {
+      return request("/api/capture/preview", { method: "POST", json: input, timeout: 8_000 });
+    },
+    // A capture as the queue keeps it: the same key and body every time.
+    async captureSave(item) {
+      const fields = item.payload.fields;
+      const files = (item.payload.files || []).map((f) => ({ name: f.name, type: f.type, bytes: Buffer.from(f.data, "base64") }));
+      if (!files.length) return request("/api/capture/save", { method: "POST", json: fields, key: item.key, timeout: UPLOAD_TIMEOUT });
+      const flat = Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)]));
+      const { body, contentType } = multipart(flat, files, item.boundary);
+      return request("/api/capture/save", { method: "POST", body, contentType, key: item.key, timeout: UPLOAD_TIMEOUT });
+    },
+    // A queued capture of an older instance: the capture.record command.
+    captureLegacy(item) {
+      return request("/api/command", { method: "POST", json: item.payload.command, key: item.key });
+    },
+    captureUndo(undo) {
+      return request("/api/capture/undo", { method: "POST", json: undo });
+    },
+    // The preview of a link, fetched by the instance (never by this app).
+    async linkPreview(url) {
+      const data = await request(`/api/embed?url=${encodeURIComponent(url)}`, { timeout: 10_000 });
+      const host = new URL(url).hostname;
+      if (data.kind === "player") return { url, title: text(data.provider, 100) || host, provider: text(data.provider, 100) || host, description: "", image: "" };
+      return {
+        url,
+        title: text(data.title, 300) || host,
+        provider: text(data.provider, 100) || host,
+        description: text(data.description, 300),
+        image: typeof data.image === "string" && /^https:\/\//.test(data.image) ? data.image.slice(0, 2000) : "",
+      };
+    },
+    // A voice note as text through the instance's transcription.
+    async transcribe(pageId, audio) {
+      if (!isId(pageId)) throw new ApiError("no-inbox");
+      const { body, contentType } = multipart({ pageId }, [audio]);
+      const data = await request("/api/transcribe", { method: "POST", body, contentType, timeout: UPLOAD_TIMEOUT });
+      return { text: typeof data.text === "string" ? data.text.slice(0, 20_000) : "" };
+    },
+    captureSuggest(input) {
+      return request("/api/ai/capture/suggest", { method: "POST", json: input, timeout: 60_000 });
+    },
+    captureCheck(input) {
+      return request("/api/ai/capture/check", { method: "POST", json: input });
     },
     async todayTasks(today = localDay()) {
       const boot = await bootstrap();

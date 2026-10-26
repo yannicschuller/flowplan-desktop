@@ -3,9 +3,10 @@
 // every call once more (main.js, guards.js).
 //
 // - window.flowplanDesktop: the app's own pages (setup, profiles, offline,
-//   sign-in, settings, quick capture, the update toast) on file: – the
-//   profiles, the sign-in, the settings, saving a quick capture and the
-//   update's buttons.
+//   sign-in, settings, quick capture, the screen region overlay, the update
+//   toast and the quick capture hint) on file: – the profiles, the sign-in,
+//   the settings, quick capture and the toasts' buttons. The capture and
+//   region channels answer only their own window (main.js).
 // - window.FlowplanDesktop: the pages of the window profile's own instance
 //   (its origin comes from main.js as --flowplan-instance=…) – a tiny bridge:
 //   Settings → Notifications can show that the app handles notifications
@@ -51,11 +52,52 @@ if (location.protocol === "file:")
       set: (patch) => ipcRenderer.invoke("flowplan:settings-set", patch),
       checkUpdates: () => ipcRenderer.invoke("flowplan:check-updates"),
       aiStatus: () => ipcRenderer.invoke("flowplan:ai-status"),
+      // Quick actions need the instance's targets; the queue can be sent now.
+      captureTargets: () => ipcRenderer.invoke("flowplan:settings-capture-targets"),
+      tryCapture: (actionId) => ipcRenderer.invoke("flowplan:settings-capture-try", actionId ? String(actionId) : ""),
+      sendQueue: () => ipcRenderer.invoke("flowplan:settings-send-queue"),
     },
+    // Quick capture (capture.js): main.js answers these only to the capture window.
     capture: {
-      info: () => ipcRenderer.invoke("flowplan:capture-info"),
-      save: (text, task) => ipcRenderer.invoke("flowplan:capture-save", { text: String(text), task: task === true }),
+      info: (refresh) => ipcRenderer.invoke("flowplan:capture-info", refresh === true),
+      save: (input) => ipcRenderer.invoke("flowplan:capture-save", input),
+      preview: (input) => ipcRenderer.invoke("flowplan:capture-preview", input),
       close: () => ipcRenderer.invoke("flowplan:capture-close"),
+      undo: (id) => ipcRenderer.invoke("flowplan:capture-undo", String(id)),
+      open: (id) => ipcRenderer.invoke("flowplan:capture-open", String(id)),
+      clipboard: () => ipcRenderer.invoke("flowplan:capture-clipboard"),
+      link: (url) => ipcRenderer.invoke("flowplan:capture-link", String(url)),
+      screen: () => ipcRenderer.invoke("flowplan:capture-screen"),
+      microphone: () => ipcRenderer.invoke("flowplan:capture-microphone"),
+      audio: (bytes, type, targetId) => ipcRenderer.invoke("flowplan:capture-audio", bytes instanceof Uint8Array ? bytes : new Uint8Array(0), String(type), String(targetId)),
+      // Real drops only (the page checks isTrusted): paths of files from the disk.
+      dropFiles: (files) => ipcRenderer.invoke("flowplan:capture-drop", [...(files || [])].map((file) => { try { return webUtils.getPathForFile(file); } catch { return ""; } }).filter(Boolean)),
+      pickFiles: () => ipcRenderer.invoke("flowplan:capture-pick"),
+      removeAttachment: (id) => ipcRenderer.invoke("flowplan:capture-remove", String(id)),
+      suggest: (input) => ipcRenderer.invoke("flowplan:capture-suggest", input),
+      attention: () => ipcRenderer.invoke("flowplan:capture-attention"),
+      discard: (id) => ipcRenderer.invoke("flowplan:capture-discard", String(id)),
+      retry: () => ipcRenderer.invoke("flowplan:capture-retry"),
+      openSettings: (what) => ipcRenderer.invoke("flowplan:capture-open-settings", String(what)),
+      onPreset: (callback) => void ipcRenderer.on("flowplan:capture-preset", (_event, preset) => callback(preset)),
+      onState: (callback) => void ipcRenderer.on("flowplan:capture-state", (_event, state) => callback(state)),
+    },
+    // The screen region overlay (screen-capture.js): its picture, the region.
+    region: {
+      onImage: (callback) => void ipcRenderer.on("flowplan:region-image", (_event, url) => callback(url)),
+      done: (rect) => ipcRenderer.invoke("flowplan:region-done", rect),
+    },
+    // The setup step "So soll Flowplan auf diesem Computer laufen" (onboarding.js).
+    setup: {
+      defaults: () => ipcRenderer.invoke("flowplan:setup-defaults"),
+      apply: (choices) => ipcRenderer.invoke("flowplan:setup-apply", choices),
+      tryCapture: () => ipcRenderer.invoke("flowplan:setup-try"),
+      finish: () => ipcRenderer.invoke("flowplan:setup-finish"),
+    },
+    // The one-time hint about quick capture (hint.js).
+    hint: {
+      info: () => ipcRenderer.invoke("flowplan:hint-info"),
+      act: (id) => ipcRenderer.invoke("flowplan:hint-action", String(id)),
     },
     update: {
       state: () => ipcRenderer.invoke("flowplan:update-state"),

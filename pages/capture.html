@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self'; media-src 'self' blob:; style-src 'self'; script-src 'self'" />
     <title data-i18n-title="capture.title">Quick capture</title>
     <link rel="stylesheet" href="style.css" />
   </head>
@@ -11,13 +11,46 @@
       <div class="capture-head">
         <img src="../build/icon.png" alt="" />
         <strong data-i18n="capture.title">Quick capture</strong>
-        <span id="target" class="capture-target"></span>
+        <span id="action" class="capture-action" hidden></span>
+        <span id="queue" class="capture-queue" hidden role="status"></span>
+        <button type="button" id="target" class="capture-target-button" aria-haspopup="listbox" aria-expanded="false">
+          <span id="target-name"></span>
+          <span aria-hidden="true">▾</span>
+        </button>
       </div>
-      <textarea id="text" maxlength="20000" rows="4" data-i18n-placeholder="capture.placeholder" placeholder="What do you want to capture?" aria-labelledby="form" spellcheck="true" autofocus></textarea>
-      <div id="status" class="capture-status" role="status" aria-live="polite"></div>
-      <div class="capture-foot">
+      <div id="picker" class="capture-picker" hidden>
+        <input id="picker-search" type="search" data-i18n-placeholder="capture.targetSearch" placeholder="Search targets…" autocomplete="off" aria-controls="picker-list" />
+        <ul id="picker-list" role="listbox" aria-label="Target"></ul>
+        <p id="picker-note" class="capture-note" hidden></p>
+      </div>
+      <div class="capture-editor" id="editor">
+        <textarea id="text" maxlength="20000" rows="3" data-i18n-placeholder="capture.placeholder" placeholder="What do you want to capture?" aria-labelledby="form" spellcheck="true" autofocus></textarea>
+        <div id="drop" class="capture-drop" hidden data-i18n="capture.dropHere">Drop images, PDFs, Markdown or text here</div>
+      </div>
+      <ul id="chips" class="capture-chips" aria-live="polite"></ul>
+      <div id="suggestion" class="capture-suggestion" hidden aria-live="polite"></div>
+      <ul id="attachments" class="capture-attachments"></ul>
+      <div class="capture-tools">
+        <button type="button" id="paste" class="tool" data-i18n="capture.paste">Paste</button>
+        <button type="button" id="attach" class="tool" data-i18n="capture.attach">Attach…</button>
+        <button type="button" id="screen" class="tool" data-i18n="capture.screen">Region</button>
+        <button type="button" id="voice" class="tool" data-i18n="capture.voice">Hold to talk</button>
+        <button type="button" id="suggest" class="tool" hidden data-i18n="capture.suggest">Suggest</button>
         <label class="capture-task"><input type="checkbox" id="task" /> <span data-i18n="capture.asTask">As a task for today</span></label>
-        <span class="capture-hint" data-i18n="capture.hint">Enter saves · Shift+Enter new line · Esc closes</span>
+      </div>
+      <div id="status" class="capture-status" role="status" aria-live="polite"></div>
+      <div id="toast" class="capture-toast" hidden role="status" aria-live="polite">
+        <span id="toast-text"></span>
+        <button type="button" id="toast-open" class="secondary" data-i18n="capture.open">Open</button>
+        <button type="button" id="toast-undo" class="secondary" data-i18n="capture.undo">Undo</button>
+      </div>
+      <div id="attention" class="capture-attention" hidden></div>
+      <div id="recent" class="capture-recent" hidden>
+        <strong data-i18n="capture.recent">Recently captured</strong>
+        <ul id="recent-list" role="listbox" aria-label="Recently captured"></ul>
+      </div>
+      <div class="capture-foot">
+        <span class="capture-hint" data-i18n="capture.hint">Enter saves · Shift+Enter new line · Tab target · Esc closes</span>
       </div>
     </form>
     <script src="../strings.js"></script>

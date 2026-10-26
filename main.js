@@ -5,7 +5,8 @@
 // fallback.js), updates of itself (updates.js) and system notifications with
 // the unread count on the icon (notifier.js, notifications.js – Electron has
 // no Web Push). Around that: a right-click menu with spelling suggestions
-// (context-menu.js), quick capture from anywhere (capture.js), a tray or
+// (context-menu.js), quick capture from anywhere (capture.js, with its
+// queue, history, quick actions and screen regions), a tray or
 // menu bar icon (tray.js), flowplan:// links to pages (deep-links.js), pages
 // in windows of their own (page-windows.js), files dropped on the app
 // (files.js), launch at login (autostart.js), printing and PDFs (print.js)
@@ -28,13 +29,14 @@ const {
   net,
   Notification,
   globalShortcut,
+  safeStorage,
 } = require("electron");
 const path = require("node:path");
 const updates = require("./updates");
 const { setupBrowserSignIn } = require("./sign-in");
 const { fallbackFor } = require("./fallback");
 const strings = require("./strings");
-const { isOwnPage, isInstancePage, allowedInWindow, isSignInRedirect, permissionAllowed, classifyHealth, defaultPagesDir, sameOrigin: sameOriginAs, instancePageUrl, opensOwnWindow, externalUrl, dictionaryWord } = require("./guards");
+const { isOwnPage, isInstancePage, allowedInWindow, isSignInRedirect, permissionAllowed, classifyHealth, defaultPagesDir, sameOrigin: sameOriginAs, instancePageUrl, opensOwnWindow, externalUrl, dictionaryWord, fromWindow } = require("./guards");
 const profiles = require("./profiles");
 const { setupNotifier } = require("./notifier");
 const notificationRules = require("./notifications");
@@ -43,6 +45,10 @@ const appSettings = require("./settings");
 const contextMenu = require("./context-menu");
 const { createInstanceApi, pageAddress } = require("./instance-api");
 const { setupCapture } = require("./capture");
+const { createStore: createCaptureStore } = require("./capture-store");
+const onboarding = require("./onboarding");
+const { setupHint } = require("./hint");
+const { setupScreenCapture } = require("./screen-capture");
 const { setupTray } = require("./tray");
 const deepLinks = require("./deep-links");
 const pageWindowRules = require("./page-windows");
@@ -72,6 +78,18 @@ function writeConfig(patch) {
   fs.writeFileSync(temporary, JSON.stringify(next, null, 2));
   fs.renameSync(temporary, configFile());
   return next;
+}
+// Quick capture's queue and history are encrypted with the system's key
+// store (capture-store.js). Linux without a key store ("basic_text") counts
+// as none: the files are then only protected by their permissions.
+function captureCipher() {
+  try {
+    if (!app.isReady() || !safeStorage.isEncryptionAvailable()) return { available: false };
+    if (process.platform === "linux" && safeStorage.getSelectedStorageBackend?.() === "basic_text") return { available: false };
+    return { available: true, encrypt: (text) => safeStorage.encryptString(text), decrypt: (buffer) => safeStorage.decryptString(buffer) };
+  } catch {
+    return { available: false };
+  }
 }
 // The app's own settings (settings.js), checked every time they are read.
 const settings = () => appSettings.settingsOf(readConfig());
@@ -116,6 +134,9 @@ let notifier = null;
 // Quick capture (capture.js) and the tray icon (tray.js), set up once ready.
 let capture = null;
 let tray = null;
+// The one-time quick capture hint (hint.js) and screen regions (screen-capture.js).
+let hint = null;
+const screenShots = setupScreenCapture({ app, preload: path.join(__dirname, "preload.js"), locale: () => strings.locale(), t });
 let ready = false;
 let quitting = false;
 function saveProfiles(next) {
@@ -306,6 +327,19 @@ function wireWindow(w, profileId, { primary }) {
     if (fallbackFor(url, origin()) === "start") return void w.loadURL(origin()).catch(() => {});
     loadPage("offline.html", { server: origin() || "", error: description || String(code) }, w);
   });
+  // First run: the instance is signed in – the setup's last step
+  // ("So soll Flowplan auf diesem Computer laufen", onboarding.js).
+  if (primary)
+    w.webContents.on("did-finish-load", () => {
+      const profile = profiles.findProfile(state, profileId);
+      if (!profile || win !== w || !onboarding.showSetupStep(readConfig()) || !sameOrigin(w.webContents.getURL())) return;
+      apiFor(profile)
+        .bootstrap()
+        .then(() => {
+          if (win === w && !w.isDestroyed() && onboarding.showSetupStep(readConfig()) && sameOrigin(w.webContents.getURL())) loadPage("setup.html", { step: "desktop" }, w);
+        })
+        .catch(() => {});
+    });
   contextMenu.attach(w, {
     t,
     dev: !app.isPackaged,
@@ -550,6 +584,7 @@ async function removeProfileAsk(id) {
   identityHosts.delete(id);
   apis.delete(id);
   notifier?.forgetProfile(id);
+  capture?.forgetProfile(id);
   if (wasActive || winProfile === id) replaceWindow(activeProfile());
   await forgetSession(profile);
   return true;
@@ -589,6 +624,10 @@ function publicSettings(extra = {}) {
     platform: process.platform,
     version: app.getVersion(),
     deviceAiSupported: !!aiHelper,
+    actionStatus: capture ? capture.actionStatus() : {},
+    actionLabels: Object.fromEntries(settings().captureActions.map((a) => [a.id, appSettings.shortcutLabel(a.shortcut)])),
+    captureQueue: capture ? capture.state().queue : { waiting: 0, failed: 0 },
+    captureEncrypted: captureCipher().available,
     ...extra,
   };
 }
@@ -602,6 +641,7 @@ function changeSettings(patch) {
   }
   const next = appSettings.applyPatch(readConfig(), patch);
   writeConfig({ settings: next });
+  if (capture && JSON.stringify(next.captureActions) !== JSON.stringify(before.captureActions)) capture.registerActions(next.captureActions);
   if (next.tray !== before.tray) tray?.apply(next.tray);
   if (next.launchAtLogin !== before.launchAtLogin || next.startHidden !== before.startHidden) applyLoginItem(next);
   if (next.spellLanguages.join() !== before.spellLanguages.join())
@@ -1109,10 +1149,12 @@ function fromOwnInstance(event) {
   const owner = ownerOf(event.sender.session);
   return !!owner && isInstancePage(frame.url, owner.server);
 }
-function handle(channel, fn, { instance = false } = {}) {
+// `window`: channels of one window of the app (quick capture, the screen
+// region overlay) answer only that window's own page.
+function handle(channel, fn, { instance = false, window = null } = {}) {
   ipcMain.handle(channel, (event, ...args) => {
     const from = event.senderFrame?.url;
-    const allowed = instance ? fromOwnInstance(event) : isOwnPage(from, defaultPagesDir);
+    const allowed = instance ? fromOwnInstance(event) : window ? fromWindow(event.sender, from, window(), defaultPagesDir) : isOwnPage(from, defaultPagesDir);
     if (!allowed) throw new Error(`${channel}: not available to ${from || "unknown frame"}`);
     return fn(event, ...args);
   });
@@ -1131,7 +1173,10 @@ handle("flowplan:add-profile", async (_event, input) => {
     throw new Error(t("server.notFound", origin, e.message));
   }
   if (state.profiles.length >= profiles.MAX_PROFILES) throw new Error(t("profiles.tooMany", profiles.MAX_PROFILES));
+  const before = state.profiles.length;
   const { state: next, profile } = profiles.addProfile(state, { name: input?.name, server: origin });
+  // The first instance: once signed in, the setup's last step follows.
+  writeConfig({ onboarding: onboarding.afterFirstProfile(readConfig(), before) });
   saveProfiles(next);
   replaceWindow(profile);
   return profile.id;
@@ -1153,12 +1198,58 @@ handle("flowplan:sign-in-cancel", () => signIn.cancel());
 handle("flowplan:settings-get", () => publicSettings());
 handle("flowplan:settings-set", (_event, patch) => changeSettings(patch && typeof patch === "object" ? patch : {}));
 handle("flowplan:check-updates", () => void updates.checkForUpdatesNow());
-handle("flowplan:capture-info", () => capture?.info() || {});
-handle("flowplan:capture-save", (_event, input) => {
+// Quick capture: only the capture window; capture.js checks what comes in.
+const captureWindow = { window: () => capture?.window() };
+const captured = (fn) => (event, ...args) => {
   if (!capture) throw new Error(t("capture.failed"));
-  return capture.save({ text: typeof input?.text === "string" ? input.text : "", task: input?.task === true });
+  return fn(...args);
+};
+handle("flowplan:capture-info", captured((refresh) => capture.info({ refresh: refresh === true })), captureWindow);
+handle("flowplan:capture-save", captured((input) => capture.save(input && typeof input === "object" ? input : {})), captureWindow);
+handle("flowplan:capture-preview", captured((input) => capture.preview(input && typeof input === "object" ? input : {})), captureWindow);
+handle("flowplan:capture-close", captured(() => capture.hide()), captureWindow);
+handle("flowplan:capture-undo", captured((id) => capture.undo(String(id))), captureWindow);
+handle("flowplan:capture-open", captured((id) => capture.open(String(id))), captureWindow);
+handle("flowplan:capture-clipboard", captured(() => capture.fromClipboard()), captureWindow);
+handle("flowplan:capture-link", captured((url) => capture.linkPreview(String(url))), captureWindow);
+handle("flowplan:capture-screen", captured(() => capture.screenRegion()), captureWindow);
+handle("flowplan:capture-microphone", captured(() => capture.microphone()), captureWindow);
+handle("flowplan:capture-audio", captured((bytes, type, targetId) => capture.addAudio(bytes instanceof Uint8Array ? bytes : new Uint8Array(0), String(type), String(targetId))), captureWindow);
+handle("flowplan:capture-drop", captured((paths) => capture.dropFiles(Array.isArray(paths) ? paths : [])), captureWindow);
+handle("flowplan:capture-pick", captured(() => capture.pickFiles()), captureWindow);
+handle("flowplan:capture-remove", captured((id) => capture.removeAttachment(String(id))), captureWindow);
+handle("flowplan:capture-suggest", captured((input) => capture.suggest(input && typeof input === "object" ? input : {})), captureWindow);
+handle("flowplan:capture-attention", captured(() => capture.attention()), captureWindow);
+handle("flowplan:capture-discard", captured((id) => capture.discard(String(id))), captureWindow);
+handle("flowplan:capture-retry", captured(() => capture.retryNow()), captureWindow);
+// The privacy pages of System Settings (macOS): screen recording, microphone.
+handle("flowplan:capture-open-settings", captured((what) => screenShots.openSettings(what === "microphone" ? "microphone" : "screen")), captureWindow);
+// The screen region overlay: only that window.
+handle("flowplan:region-done", (_event, rect) => {
+  const ok = rect === "all" || (rect && ["x", "y", "width", "height"].every((k) => Number.isFinite(rect[k])));
+  screenShots.answer(ok ? (rect === "all" ? "all" : { x: rect.x, y: rect.y, width: rect.width, height: rect.height }) : null);
+}, { window: () => screenShots.window() });
+// The setup step and the hint (onboarding.js, hint.js).
+handle("flowplan:setup-defaults", () => ({ ...publicSettings(), defaults: onboarding.setupDefaults() }));
+handle("flowplan:setup-apply", (_event, choices) => changeSettings(onboarding.setupPatch(choices && typeof choices === "object" ? choices : {}, settings())));
+handle("flowplan:setup-try", () => capture?.show());
+handle("flowplan:setup-finish", () => {
+  writeConfig({ onboarding: onboarding.setupFinished(readConfig()) });
+  openServer();
 });
-handle("flowplan:capture-close", () => capture?.hide());
+handle("flowplan:hint-info", () => hint?.info() || {});
+handle("flowplan:hint-action", (_event, id) => hint?.act(["try", "settings", "close"].includes(id) ? id : "close"));
+handle("flowplan:settings-capture-targets", async () => {
+  const profile = activeProfile();
+  if (!profile) return { targets: [] };
+  const raw = await apiFor(profile).captureTargets().catch(() => null);
+  return raw ? require("./capture-targets").normalizeTargets(raw) : { targets: [] };
+});
+handle("flowplan:settings-capture-try", (_event, id) => {
+  const action = settings().captureActions.find((a) => a.id === id);
+  capture?.show(action ? require("./capture-actions").presetFor(action) : null);
+});
+handle("flowplan:settings-send-queue", () => capture?.retryNow());
 handle("flowplan:update-state", () => updates.currentView());
 handle("flowplan:update-action", (_event, id) => updates.act(String(id)));
 handle("flowplan:notifications-enabled", () => !!notifier && notifier.settings().enabled, { instance: true });
@@ -1238,12 +1329,45 @@ else {
       preload,
       settings,
       activeProfile,
+      profileById: (id) => profiles.findProfile(state, id),
       api: apiFor,
       isOnline: () => net.isOnline(),
       notify,
       saved: () => tray?.refresh({ reload: true }),
+      changed: () => tray?.refresh(),
+      store: createCaptureStore({ dir: path.join(app.getPath("userData"), "capture"), cipher: captureCipher() }),
+      open: (profileId, url) => openFromNotification(profileId, url),
+      readConfig,
+      writeConfig,
+      // The first capture: the hint is not needed any more.
+      used: () => {
+        const config = readConfig();
+        if (!onboarding.stateOf(config).captureUsed) writeConfig({ onboarding: onboarding.captureUsed(config) });
+        hint?.close();
+      },
+      // Apple's model for the AI suggestion, when this Mac has it and it is on.
+      deviceAi: () => aiService(),
+      screen: screenShots,
+      inspectFile,
+      fileRules,
+      prepareSession: (ses) => {
+        preparedSessions.add(ses);
+        ses.setSpellCheckerLanguages?.(settings().spellLanguages);
+      },
+      isOwnPage: (url) => isOwnPage(url, defaultPagesDir),
       // Spelling suggestions in the capture window too.
       decorate: (w) => contextMenu.attach(w, { t, dev: !app.isPackaged, settings, setSpellLanguages, origin: () => undefined, openWindow: () => {}, openExternal: (url) => void shell.openExternal(url) }),
+    });
+    hint = setupHint({
+      getWindow: () => win,
+      locale: strings.locale,
+      shortcutLabel: () => capture?.label() || "",
+      act: (id) => {
+        writeConfig({ onboarding: onboarding.hintDismissed(readConfig()) });
+        app.emit("flowplan-hint-action", id);
+        if (id === "try") capture?.show();
+        if (id === "settings") showSettings();
+      },
     });
     tray = setupTray({
       t,
@@ -1253,6 +1377,7 @@ else {
         active: state.activeProfile,
         captureLabel: capture?.label() ? settings().captureShortcut : "",
         updateReady: updates.status().phase === "ready" ? updates.status().version || " " : null,
+        capture: capture?.trayData(),
       }),
       loadTasks: () => {
         const profile = activeProfile();
@@ -1269,10 +1394,18 @@ else {
         update: () => updates.restartToUpdate(),
         settings: showSettings,
         quit: () => app.quit(),
+        openCaptured: (id) => {
+          const entry = capture?.trayData().history.find((e) => e.id === id);
+          if (entry?.open) capture.open(id);
+          else capture?.show();
+        },
+        sendQueue: () => capture?.retryNow(),
       },
     });
     app.on("flowplan-badge", () => tray?.refresh());
     capture.register();
+    capture.registerActions();
+    capture.start(state.profiles.map((p) => p.id));
     const current = settings();
     tray.apply(current.tray);
     // A shortcut another app holds: said once, without stopping anything.
@@ -1286,6 +1419,19 @@ else {
     // minimised one.
     const hidden = current.launchAtLogin && current.startHidden && autostart.startsHidden(process.argv, isMac ? app.getLoginItemSettings() : {});
     if (!hidden || (!isMac && !current.tray)) createWindow(undefined, undefined, { hidden });
+    // People from before quick capture had its window: one small hint.
+    // Shown a moment after the window is there (not while starting hidden).
+    if (onboarding.showHint(readConfig(), current) && capture.status() === "ok" && win) {
+      const target = win;
+      const later = () =>
+        setTimeout(() => {
+          if (!onboarding.showHint(readConfig(), settings()) || win !== target || target.isDestroyed() || !target.isVisible()) return;
+          writeConfig({ onboarding: { ...onboarding.stateOf(readConfig()), hintShown: true } });
+          hint.show();
+        }, Number(process.env.FLOWPLAN_HINT_DELAY) || 4000);
+      if (target.isVisible()) later();
+      else target.once("show", later);
+    }
     handoff.ready();
     notifier.start();
     signIn.ready();
@@ -1309,6 +1455,8 @@ else {
     quitting = true;
   });
   app.on("will-quit", () => {
+    capture?.dispose();
+    screenShots.dispose();
     globalShortcut.unregisterAll();
     aiInstance?.stop();
   });

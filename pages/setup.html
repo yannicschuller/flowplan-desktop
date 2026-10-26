@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <main>
+    <main id="connect">
       <img src="../build/icon.png" alt="" />
       <h1 id="heading" data-i18n="setup.heading">Welcome to Flowplan</h1>
       <p id="text" data-i18n="setup.text">Connect to app.flowplan.org or enter the address of your own Flowplan instance. You can add more instances later in the menu under “Profiles”.</p>
@@ -21,8 +21,40 @@
         <button id="cancel" type="button" class="secondary" hidden data-i18n="setup.cancel">Cancel</button>
       </form>
     </main>
+    <!-- The last step after the first instance is signed in (onboarding.js). -->
+    <main id="desktop" hidden>
+      <img src="../build/icon.png" alt="" />
+      <h1 data-i18n="setup.desktopTitle">How Flowplan should run on this computer</h1>
+      <p data-i18n="setup.desktopText">Everything is optional – skip any of it and change it all later in Settings.</p>
+      <div class="setup-choices">
+        <div class="setup-choice">
+          <label class="switch"><input type="checkbox" id="capture" /> <strong data-i18n="setup.capture">Turn on quick capture</strong></label>
+          <p class="small" data-i18n="setup.captureHint">A shortcut opens a small window above every app for notes, tasks and links – also offline.</p>
+          <div class="row">
+            <input id="shortcut" readonly data-i18n-placeholder="settings.shortcutPlaceholder" placeholder="Press a key combination" aria-labelledby="shortcut-status" />
+            <button type="button" id="record" class="secondary" data-i18n="settings.shortcutChange">Change</button>
+            <button type="button" id="try" class="secondary" data-i18n="setup.try">Try it now</button>
+          </div>
+          <p id="shortcut-status" class="small shortcut-status" role="status" aria-live="polite"></p>
+        </div>
+        <div class="setup-choice">
+          <label class="switch"><input type="checkbox" id="tray" /> <strong id="tray-label" data-i18n="settings.tray">Icon in the notification area</strong></label>
+          <p class="small" data-i18n="setup.trayHint">Quick capture, today's tasks and unread notifications.</p>
+        </div>
+        <div class="setup-choice">
+          <label class="switch"><input type="checkbox" id="launchAtLogin" /> <strong data-i18n="setup.launchAtLogin">Start when you sign in to the computer</strong></label>
+          <label class="switch indent"><input type="checkbox" id="startHidden" /> <span data-i18n="setup.startHidden">Start minimized / in the background</span></label>
+        </div>
+      </div>
+      <div class="error" id="desktop-error" role="alert"></div>
+      <div class="row">
+        <button type="button" id="done" data-i18n="setup.done">Done</button>
+        <button type="button" id="skip" class="secondary" data-i18n="setup.skip">Skip</button>
+      </div>
+    </main>
     <script src="../strings.js"></script>
     <script src="i18n.js"></script>
+    <script src="shortcut-keys.js"></script>
     <script src="setup.js"></script>
   </body>
 </html>

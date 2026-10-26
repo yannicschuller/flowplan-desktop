@@ -1,6 +1,7 @@
 // The tray icon (Windows, Linux) or menu bar icon (macOS) – a setting, on
 // by default in the macOS menu bar, off on Windows and Linux. Its menu:
-// quick capture, today's tasks of the active profile (from its instance's
+// quick capture (with captures waiting for the connection and "Zuletzt
+// erfasst", capture-history.js), today's tasks of the active profile (from its instance's
 // "My tasks", instance-api.js), the unread notifications, open Flowplan, the
 // profiles, "Restart to Update" once an update is ready, settings and quit.
 // On macOS the icon is a template image (black with alpha, build/
@@ -12,10 +13,23 @@
 const path = require("node:path");
 
 // data: { tasks: {tasks, more} | null, tasksError, unread, profiles, active,
-// captureLabel, updateReady, signedOut }
+// captureLabel, updateReady, signedOut, capture: { queue, history } }
 function trayItems(data, t = (key) => key) {
   const items = [];
   items.push({ id: "tray-capture", label: t("tray.capture"), accelerator: data.captureLabel || undefined, action: "capture" });
+  const queue = data.capture?.queue;
+  if (queue?.waiting) items.push({ id: "tray-capture-queue", label: t("tray.queued", queue.waiting), action: "send-queue" });
+  if (queue?.failed) items.push({ id: "tray-capture-failed", label: t("tray.queueFailed", queue.failed), action: "capture" });
+  const recent = data.capture?.history || [];
+  if (recent.length)
+    items.push({
+      id: "tray-captured",
+      label: t("tray.recent"),
+      submenu: recent.slice(0, 8).map((e) => {
+        const label = `${e.queued ? "⏳ " : ""}${e.title}`;
+        return { id: "tray-captured-entry", label: label.length > 50 ? `${label.slice(0, 49)}…` : label, sublabel: e.target, action: "open-captured", value: e.id };
+      }),
+    });
   items.push({ type: "separator" });
   items.push({ id: "tray-today", label: t("tray.today"), enabled: false });
   const list = data.tasks?.tasks || [];
@@ -89,6 +103,10 @@ function setupTray(deps) {
           return a.settings();
         case "quit":
           return a.quit();
+        case "open-captured":
+          return a.openCaptured(item.value);
+        case "send-queue":
+          return a.sendQueue();
       }
     };
     const native = (item) => {

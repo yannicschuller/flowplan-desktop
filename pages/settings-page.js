@@ -1,6 +1,7 @@
 // Settings (settings.js): tray icon, launch at login, the quick capture
-// shortcut, the spell checker's languages and – on a Mac build with the
-// helper – Apple Intelligence (device-ai.js, optional). Every change is saved
+// shortcut and its quick actions (capture-actions.js), the offline queue,
+// the spell checker's languages and – on a Mac build with the helper –
+// Apple Intelligence (device-ai.js, optional). Every change is saved
 // at once; main.js checks it again and answers with what now holds.
 const { t } = window.flowplanStrings;
 const desktop = window.flowplanDesktop;
@@ -39,7 +40,140 @@ function render(data) {
   $("device-ai").hidden = !data.deviceAiSupported;
   $("deviceAi").checked = s.deviceAi;
   if (data.deviceAiSupported && s.deviceAi !== shownAi) void showAiStatus();
+  renderQueue(data);
+  renderActions(data);
 }
+// ---- The offline queue ----
+function renderQueue(data) {
+  const q = data.captureQueue || { waiting: 0, failed: 0 };
+  $("queue-status").textContent = [q.waiting ? t("settings.queueWaiting", q.waiting) : t("settings.queueNone"), q.failed ? t("settings.queueFailed", q.failed) : ""].filter(Boolean).join(" ");
+  $("queue-send").hidden = !q.waiting;
+  $("queue-storage").textContent = t(data.captureEncrypted ? "settings.queueEncrypted" : "settings.queuePlain");
+}
+$("queue-send").addEventListener("click", async () => {
+  await desktop.settings.sendQueue();
+  setTimeout(async () => render(await desktop.settings.get()), 1500);
+});
+$("capture-try").addEventListener("click", () => desktop.settings.tryCapture());
+
+// ---- Quick actions ----
+let targets = null;
+let recordingAction = null;
+async function loadTargets() {
+  try {
+    targets = await desktop.settings.captureTargets();
+  } catch {
+    targets = { targets: [] };
+  }
+  if (current) renderActions(current);
+}
+const optionsFor = (kind) => {
+  const list = targets?.targets || [];
+  if (kind === "journal") return list.filter((x) => x.kind === "journal");
+  if (kind === "template") return list.filter((x) => x.kind === "database");
+  return [{ id: "inbox", name: t("capture.kind.inbox") }, ...list];
+};
+function saveActions(list) {
+  return change({ captureActions: list });
+}
+function element(tag, props = {}, children = []) {
+  const node = Object.assign(document.createElement(tag), props);
+  node.append(...children);
+  return node;
+}
+function renderActions(data) {
+  const list = data.settings.captureActions || [];
+  const box = $("actions");
+  if (recordingAction) return;
+  $("actions-note").hidden = !!targets?.targets?.length;
+  $("actions-note").textContent = t("settings.actionNeedsSignIn");
+  box.replaceChildren(
+    ...list.map((action, index) => {
+      const update = (patch) => saveActions(list.map((a, i) => (i === index ? { ...a, ...patch } : a)));
+      const name = element("input", { type: "text", value: action.name, maxLength: 40, ariaLabel: t("settings.actionName") });
+      name.addEventListener("change", () => update({ name: name.value }));
+      const target = element("select", { ariaLabel: t("settings.actionTarget") });
+      const choices = optionsFor(action.kind);
+      if (action.kind === "journal" || action.kind === "template")
+        target.append(element("option", { value: "", textContent: t(action.kind === "journal" ? "settings.actionChooseJournal" : "settings.actionChooseDatabase") }));
+      for (const x of choices) target.append(element("option", { value: x.id, textContent: x.space ? `${x.name} · ${x.space}` : x.name }));
+      if (action.target && !choices.some((x) => x.id === action.target)) target.append(element("option", { value: action.target, textContent: "…" }));
+      target.value = action.target || "";
+      target.addEventListener("change", () => update({ target: target.value || null, template: null }));
+      const parts = [name, target];
+      if (action.kind === "template") {
+        const template = element("select", { ariaLabel: t("settings.actionTemplate") });
+        template.append(element("option", { value: "", textContent: t("settings.actionNoTemplate") }));
+        const db = (targets?.targets || []).find((x) => x.id === action.target);
+        for (const r of db?.templates || []) template.append(element("option", { value: r.id, textContent: r.name }));
+        template.value = action.template || "";
+        template.addEventListener("change", () => update({ template: template.value || null }));
+        parts.push(template);
+      }
+      const shortcut = element("input", { readOnly: true, className: "action-shortcut", value: data.actionLabels?.[action.id] || "", placeholder: t("settings.shortcutPlaceholder"), ariaLabel: t("settings.shortcutPlaceholder") });
+      const record = element("button", { type: "button", className: "secondary", textContent: t("settings.shortcutChange") });
+      record.addEventListener("click", () => {
+        recordingAction = action.id;
+        shortcut.value = "";
+        shortcut.classList.add("recording");
+        shortcut.focus();
+      });
+      shortcut.addEventListener("keydown", (event) => {
+        if (recordingAction !== action.id) return;
+        event.preventDefault();
+        if (event.key === "Escape") {
+          recordingAction = null;
+          return render(current);
+        }
+        const value = acceleratorOf(event);
+        if (!value) return;
+        recordingAction = null;
+        void update({ shortcut: value });
+      });
+      shortcut.addEventListener("blur", () => {
+        if (recordingAction === action.id) {
+          recordingAction = null;
+          render(current);
+        }
+      });
+      const off = element("button", { type: "button", className: "secondary", textContent: t("settings.shortcutOff") });
+      off.addEventListener("click", () => update({ shortcut: null }));
+      const tryIt = element("button", { type: "button", className: "secondary", textContent: t("settings.captureTry") });
+      tryIt.addEventListener("click", () => desktop.settings.tryCapture(action.id));
+      const remove = element("button", { type: "button", className: "secondary", textContent: t("settings.actionRemove") });
+      remove.addEventListener("click", () => saveActions(list.filter((_, i) => i !== index)));
+      const statusKey = data.actionStatus?.[action.id] || (action.shortcut ? "ok" : "off");
+      const status = element("p", { className: `small action-status ${statusKey}`, textContent: t(`settings.actionStatus.${statusKey}`) });
+      const row = element("div", { className: "action-row" }, [element("div", { className: "row" }, parts), element("div", { className: "row" }, [shortcut, record, off, tryIt, remove])]);
+      if (action.kind === "note" || action.kind === "bookmark") {
+        const box = element("input", { type: "checkbox", checked: action.task });
+        box.addEventListener("change", () => update({ task: box.checked }));
+        row.append(element("label", { className: "switch" }, [box, " ", element("span", { textContent: t("settings.actionTask") })]));
+      }
+      row.append(status);
+      row.dataset.id = action.id;
+      return row;
+    }),
+  );
+}
+$("action-add").addEventListener("change", (event) => {
+  const kind = event.target.value;
+  event.target.value = "";
+  if (!kind || !current) return;
+  const list = current.settings.captureActions || [];
+  const preset = {
+    task: { name: t("actions.task"), target: "inbox", task: true },
+    journal: { name: t("actions.journal"), target: (targets?.targets || []).find((x) => x.kind === "journal")?.id || null },
+    bookmark: { name: t("actions.bookmark"), target: "inbox" },
+    template: { name: t("actions.meeting"), target: null, prefix: t("actions.meetingPrefix") },
+    note: { name: t("actions.note"), target: "inbox" },
+  }[kind];
+  const ids = new Set(list.map((a) => a.id));
+  let id = kind;
+  for (let n = 2; ids.has(id); n++) id = `${kind}-${n}`;
+  void saveActions([...list, { id, kind, shortcut: null, ...preset }]);
+});
+void loadTargets();
 let shownAi = null;
 async function showAiStatus() {
   const line = $("device-ai-status");
@@ -68,24 +202,8 @@ for (const id of ["tray", "launchAtLogin", "startHidden", "deviceAi"]) $(id).add
 for (const box of document.querySelectorAll("#languages input"))
   box.addEventListener("change", () => change({ spellLanguages: [...document.querySelectorAll("#languages input:checked")].map((b) => b.value) }));
 
-// Recording a shortcut: the next key with at least one modifier.
-const KEYS = { Space: "Space", Enter: "Enter", Tab: "Tab", Backspace: "Backspace", Delete: "Delete", ArrowUp: "Up", ArrowDown: "Down", ArrowLeft: "Left", ArrowRight: "Right", Home: "Home", End: "End", PageUp: "PageUp", PageDown: "PageDown", Minus: "-", Equal: "=", Comma: ",", Period: ".", Slash: "/", Semicolon: ";", Quote: "'", BracketLeft: "[", BracketRight: "]", Backslash: "\\", Backquote: "`" };
-function acceleratorOf(event) {
-  let key = null;
-  if (/^Key[A-Z]$/.test(event.code)) key = event.code.slice(3);
-  else if (/^Digit[0-9]$/.test(event.code)) key = event.code.slice(5);
-  else if (/^F([1-9]|1[0-9]|2[0-4])$/.test(event.code)) key = event.code;
-  else key = KEYS[event.code] || null;
-  if (!key) return null;
-  const mods = [];
-  if (mac ? event.metaKey : event.ctrlKey) mods.push("CommandOrControl");
-  if (mac && event.ctrlKey) mods.push("Control");
-  if (!mac && event.metaKey) mods.push("Super");
-  if (event.altKey) mods.push("Alt");
-  if (event.shiftKey) mods.push("Shift");
-  if (!mods.length || (mods.length === 1 && mods[0] === "Shift")) return null;
-  return [...mods, key].join("+");
-}
+// Recording a shortcut: the next key with at least one modifier (shortcut-keys.js).
+const acceleratorOf = (event) => window.flowplanShortcut.acceleratorOf(event, mac);
 function stopRecording() {
   recording = false;
   shortcut.classList.remove("recording");

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'" />
+    <title data-i18n-title="capture.title">Quick capture</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="hint">
+    <section class="hint-card" role="status" aria-live="polite">
+      <img src="../build/icon.png" alt="" />
+      <div>
+        <strong id="title"></strong>
+        <p data-i18n="hint.text">Notes, tasks and links from any app – also offline.</p>
+      </div>
+      <button type="button" id="close" class="hint-close" data-action="close">×</button>
+      <div class="hint-actions">
+        <button type="button" data-action="try" data-i18n="hint.try">Try it</button>
+        <button type="button" class="secondary" data-action="settings" data-i18n="hint.settings">Settings</button>
+      </div>
+    </section>
+    <script src="../strings.js"></script>
+    <script src="i18n.js"></script>
+    <script src="hint-page.js"></script>
+  </body>
+</html>
