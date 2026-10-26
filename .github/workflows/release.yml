@@ -123,6 +123,34 @@ jobs:
         run: |
           printf '{\n  "macSigned": %s\n}\n' "$SIGNED" > build/update.json
           cat build/update.json
+      # Apple Intelligence on the Mac (optional, native/device-ai): a small
+      # Swift helper, built universal and placed in Contents/MacOS by
+      # electron-builder (build.mac.extraFiles), which signs it with the app
+      # (Developer ID, hardened runtime, timestamp) and notarizes both.
+      # FoundationModels needs the macOS 26 SDK (Xcode 26); with an older one
+      # the helper still builds and reports the model as unavailable.
+      - name: Apple Intelligence helper (macOS)
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          if ! xcrun --sdk macosx --show-sdk-version | grep -Eq '^(2[6-9]|[3-9][0-9])'; then
+            xcode="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n 1)"
+            if [ -n "$xcode" ]; then sudo xcode-select -s "$xcode/Contents/Developer"; fi
+          fi
+          sdk="$(xcrun --sdk macosx --show-sdk-version)"
+          echo "macOS SDK $sdk, $(swift --version 2>&1 | head -n 1)"
+          if ! printf '%s' "$sdk" | grep -Eq '^(2[6-9]|[3-9][0-9])'; then
+            echo "::warning::macOS SDK $sdk has no FoundationModels: the helper will report Apple Intelligence as unavailable."
+          fi
+          cd native/device-ai
+          swift build -c release --arch arm64 --arch x86_64
+          bin="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)"
+          mkdir -p dist
+          cp "$bin/device-ai" dist/device-ai
+          chmod 755 dist/device-ai
+          lipo -info dist/device-ai
+          # It answers and ends when stdin closes (on this runner: unavailable).
+          printf '{"id":"1","type":"availability"}\n' | ./dist/device-ai
       - name: Build
         shell: bash
         env:
@@ -164,6 +192,32 @@ jobs:
             export CSC_KEYCHAIN="$keychain" CSC_NAME="$identity"
           fi
           npx electron-builder ${{ matrix.target }} --publish never
+      - name: Check the Apple Intelligence helper in the app (macOS)
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        env:
+          SIGNED: ${{ secrets.CSC_LINK != '' }}
+        run: |
+          shopt -s nullglob
+          apps=(dist/mac*/Flowplan.app)
+          [ ${#apps[@]} -gt 0 ] || { echo "::error::No Flowplan.app in dist/"; exit 1; }
+          for app in "${apps[@]}"; do
+            helper="$app/Contents/MacOS/device-ai"
+            [ -x "$helper" ] || { echo "::error::$helper is missing"; exit 1; }
+            lipo -info "$helper"
+            if [ "$SIGNED" = true ]; then
+              # Signed like the app: same team, hardened runtime, a timestamp.
+              codesign --verify --strict --verbose=2 "$helper"
+              details="$(codesign -dv --verbose=4 "$helper" 2>&1)"
+              app_team="$(codesign -dv --verbose=4 "$app" 2>&1 | sed -n 's/^TeamIdentifier=//p')"
+              printf '%s\n' "$details" | grep -E '^(Authority|TeamIdentifier|Timestamp|CodeDirectory)'
+              printf '%s\n' "$details" | grep -q '^Authority=Developer ID Application' || { echo "::error::device-ai is not signed with the Developer ID"; exit 1; }
+              printf '%s\n' "$details" | grep -q "^TeamIdentifier=$app_team\$" || { echo "::error::device-ai is signed by another team than the app"; exit 1; }
+              printf '%s\n' "$details" | grep -Eq '^CodeDirectory.*flags=.*runtime' || { echo "::error::device-ai lacks the hardened runtime"; exit 1; }
+              printf '%s\n' "$details" | grep -q '^Timestamp=' || { echo "::error::device-ai has no secure timestamp"; exit 1; }
+              codesign --verify --deep --strict --verbose=2 "$app"
+            fi
+          done
       - name: Attach to the release
         shell: bash
         env:

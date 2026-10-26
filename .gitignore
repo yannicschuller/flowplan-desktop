@@ -2,3 +2,4 @@ node_modules
 dist
 test/*.png
 .DS_Store
+native/device-ai/.build
