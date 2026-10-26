@@ -124,9 +124,9 @@ jobs:
           printf '{\n  "macSigned": %s\n}\n' "$SIGNED" > build/update.json
           cat build/update.json
       # Apple Intelligence on the Mac (optional, native/device-ai): a small
-      # Swift helper, built universal and placed in Contents/MacOS by
-      # electron-builder (build.mac.extraFiles), which signs it with the app
-      # (Developer ID, hardened runtime, timestamp) and notarizes both.
+      # Swift helper, built universal, signed in the Build step (Developer ID,
+      # hardened runtime, timestamp), placed in Contents/MacOS by
+      # electron-builder (build.mac.extraFiles) and notarized with the app.
       # FoundationModels needs the macOS 26 SDK (Xcode 26); with an older one
       # the helper still builds and reports the model as unavailable.
       - name: Apple Intelligence helper (macOS)
@@ -190,6 +190,15 @@ jobs:
             echo "Signing as Developer ID Application: $identity"
             unset CSC_LINK CSC_KEY_PASSWORD
             export CSC_KEYCHAIN="$keychain" CSC_NAME="$identity"
+            # electron-builder signs Contents/MacOS/Flowplan but not the other
+            # executables next to it, and codesign refuses an app whose
+            # Contents/MacOS holds an unsigned one: sign the helper first, the
+            # way notarization wants it (hardened runtime, timestamp).
+            helper=native/device-ai/dist/device-ai
+            if [ -f "$helper" ]; then
+              codesign --sign "Developer ID Application: $identity" --keychain "$keychain" --force --timestamp --options runtime "$helper"
+              codesign --verify --strict --verbose=2 "$helper"
+            fi
           fi
           npx electron-builder ${{ matrix.target }} --publish never
       - name: Check the Apple Intelligence helper in the app (macOS)
