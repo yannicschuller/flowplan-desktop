@@ -29,7 +29,7 @@
     "dist:dir": "electron-builder --dir --publish never"
   },
   "devDependencies": {
-    "electron": "^44.9.3",
+    "electron": "^45.0.0",
     "electron-builder": "^26.15.3",
     "playwright": "^1.63.0"
   },
