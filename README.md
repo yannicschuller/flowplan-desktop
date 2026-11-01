@@ -204,7 +204,7 @@ A check from the menu answers in the same toast (up to date, or what failed); au
 
 ### Trust model of unsigned builds
 
-Until the certificates below exist, a downloaded update is verified only by the SHA-512 in the release feed (`latest*.yml`), fetched over HTTPS from GitHub Releases (or the `https://` mirror in `FLOWPLAN_UPDATE_URL`). There is no code signature to check, so whoever can publish a release of this repository – or whoever controls the mirror – can ship any code to every installed app. Treat the release workflow, the self-hosted runner that runs its `version` and `publish` jobs and the repository's write access accordingly. With `WIN_CSC_LINK` set, electron-updater additionally checks the Windows update's signature against the publisher; with `CSC_LINK`, macOS only installs updates signed by the same team.
+Until the certificates below exist, a downloaded update is verified only by the SHA-512 in the release feed (`latest*.yml`), fetched over HTTPS from GitHub Releases (or the `https://` mirror in `FLOWPLAN_UPDATE_URL`). There is no code signature to check, so whoever can publish a release of this repository – or whoever controls the mirror – can ship any code to every installed app. Treat the release workflow and the repository's write access accordingly. With `WIN_CSC_LINK` set, electron-updater additionally checks the Windows update's signature against the publisher; with `CSC_LINK`, macOS only installs updates signed by the same team.
 
 ## Signing
 
@@ -241,7 +241,7 @@ Windows has the same with SmartScreen: a code signing certificate (`WIN_CSC_LINK
 
 If a build fails, run the workflow again with **rebuild** set to the version (e.g. `1.0.1`): it builds that version again and completes its draft release instead of raising the version.
 
-Installed apps find the new version within six hours; the download page offers it right away. CI (`ci.yml`) checks every push with a syntax check, the tests without a network (`test:security`, `test:features`, and `test:offline`, `test:profiles`, `test:notifications` and `test:app` under `xvfb-run` where it is installed), that the installed Electron is one of the three majors Electron still patches (anything older than `latest − 2` fails) and a Linux test build. CI jobs run on the self-hosted runner, Dependabot and pull requests from forks on GitHub's runners; the release workflow is dispatched by maintainers only and runs on the self-hosted runner.
+Installed apps find the new version within six hours; the download page offers it right away. CI (`ci.yml`) checks every push with a syntax check, the tests without a network (`test:security`, `test:features`, and `test:offline`, `test:profiles`, `test:notifications` and `test:app` under `xvfb-run` where it is installed), that the installed Electron is one of the three majors Electron still patches (anything older than `latest − 2` fails) and a Linux test build. CI and the release workflow run on GitHub's runners; the release workflow is dispatched by maintainers only.
 
 ## Development
 

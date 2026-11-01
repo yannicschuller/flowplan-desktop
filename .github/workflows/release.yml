@@ -31,9 +31,8 @@ concurrency:
 
 jobs:
   version:
-    # Own runner (label self-hosted): only maintainers can dispatch this
-    # workflow, so no fork or Dependabot code ever runs here.
-    runs-on: self-hosted
+    # Only maintainers can dispatch this workflow.
+    runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -238,7 +237,7 @@ jobs:
 
   publish:
     needs: [version, build]
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - name: Publish the release
         env:
