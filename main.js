@@ -350,6 +350,62 @@ function wireWindow(w, profileId, { primary }) {
     openExternal: (url) => void shell.openExternal(url),
   });
   handoff.track(w, origin);
+  wireHistory(w);
+}
+// ---- Back and forward (#125) ----
+//
+// The web app has its own back and forward (arrows at the top left, ⌘[ /
+// Alt+←): it says through the bridge whether there is a step
+// (flowplan:history-state) and goes when the app sends a command – the menu
+// items, the trackpad's swipe (macOS), the mouse's side buttons
+// (app-command on Windows and Linux). A page that never said anything (the
+// app's own pages, an older instance) goes through the window's history.
+const historyStates = new WeakMap(); // webContents → { back, forward }
+function historyState(w) {
+  if (!w || w.isDestroyed()) return { back: false, forward: false };
+  const reported = historyStates.get(w.webContents);
+  if (reported) return reported;
+  const nav = w.webContents.navigationHistory;
+  return { back: nav.canGoBack(), forward: nav.canGoForward() };
+}
+function historyCommand(w, command) {
+  if (!w || w.isDestroyed() || (command !== "back" && command !== "forward")) return;
+  const contents = w.webContents;
+  if (historyStates.has(contents)) return contents.send("flowplan:history-command", command);
+  const nav = contents.navigationHistory;
+  if (command === "back" && nav.canGoBack()) nav.goBack();
+  else if (command === "forward" && nav.canGoForward()) nav.goForward();
+}
+// The menu items follow the window in front.
+function refreshHistoryMenu() {
+  const menu = Menu.getApplicationMenu();
+  const state = historyState(frontWindow());
+  const back = menu?.getMenuItemById("history-back"),
+    forward = menu?.getMenuItemById("history-forward");
+  if (back) back.enabled = state.back;
+  if (forward) forward.enabled = state.forward;
+  app.emit("flowplan-history-menu", state);
+}
+function wireHistory(w) {
+  const contents = w.webContents;
+  // Another document: it reports again (or not, then the window's history counts).
+  contents.on("did-navigate", () => {
+    historyStates.delete(contents);
+    refreshHistoryMenu();
+  });
+  contents.on("did-navigate-in-page", refreshHistoryMenu);
+  w.on("focus", refreshHistoryMenu);
+  // macOS, "Swipe between pages" with two or three fingers: to the left is
+  // back (Electron's "left" is a positive deltaX, as Safari reads it).
+  w.on("swipe", (_event, direction) => {
+    if (direction === "left") historyCommand(w, "back");
+    else if (direction === "right") historyCommand(w, "forward");
+  });
+  // The mouse's side buttons and the keyboard's browser keys (Windows, Linux).
+  w.on("app-command", (_event, command) => {
+    if (command === "browser-backward") historyCommand(w, "back");
+    else if (command === "browser-forward") historyCommand(w, "forward");
+  });
 }
 function saveWindowState(w) {
   if (!w || w.isDestroyed()) return;
@@ -1096,15 +1152,21 @@ function buildMenu() {
     {
       label: t("menu.navigation"),
       submenu: [
+        // The page's own back and forward (wireHistory); enabled when there
+        // is a step. Alt+← does not move by words on Windows and Linux.
         {
+          id: "history-back",
           label: t("menu.back"),
           accelerator: isMac ? "Cmd+[" : "Alt+Left",
-          click: nav((w) => w.navigationHistory.canGoBack() && w.navigationHistory.goBack()),
+          enabled: historyState(frontWindow()).back,
+          click: () => historyCommand(frontWindow(), "back"),
         },
         {
+          id: "history-forward",
           label: t("menu.forward"),
           accelerator: isMac ? "Cmd+]" : "Alt+Right",
-          click: nav((w) => w.navigationHistory.canGoForward() && w.navigationHistory.goForward()),
+          enabled: historyState(frontWindow()).forward,
+          click: () => historyCommand(frontWindow(), "forward"),
         },
         {
           label: t("menu.home"),
@@ -1258,6 +1320,7 @@ handle("flowplan:notifications-refresh", (event) => notifier?.refresh(ownerOf(ev
 handle("flowplan:spelling-add-word", (event, word) => dictionaryWord(word) && event.sender.session.addWordToSpellCheckerDictionary(word), { instance: true });
 handle("flowplan:open-window", (event, url) => void openPageWindow(ownerOf(event.sender.session)?.id, url), { instance: true });
 handle("flowplan:drop-files", (event, paths) => void takeFiles(fileRules.droppedPaths(paths)), { instance: true });
+handle("flowplan:history-state", (event, back, forward) => void (historyStates.set(event.sender, { back: back === true, forward: forward === true }), refreshHistoryMenu()), { instance: true });
 // Apple's on-device model: whether the bridge exists (asked by the preload,
 // synchronously, before the page runs), then its calls – the instance's
 // main frame only, every request checked again (device-ai-rules.js).

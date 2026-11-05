@@ -73,6 +73,9 @@ const page = (origin) => `<!doctype html>
 <img id="image" src="/image.png" width="80" height="80" alt="">
 <p class="no-print">Not printed</p>
 <script>
+  // Like lib/history-nav.ts: the app's back and forward come as commands.
+  window.historyCommands = [];
+  window.FlowplanDesktop?.history?.onCommand((command) => window.historyCommands.push(command));
   // Like components/text-menu.tsx: the editor shows its own menu.
   document.addEventListener("contextmenu", (e) => {
     if (e.target.closest("#editor") && !e.shiftKey) { e.preventDefault(); window.webMenu = (window.webMenu || 0) + 1; }
