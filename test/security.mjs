@@ -364,16 +364,27 @@ const server = "https://flowplan.example.com";
   console.log("✔ Antworten des Servers unterschieden");
 }
 
-// E9: words in three languages, English otherwise.
+// E9: words in four languages, English otherwise.
 {
   assert.equal(strings.pickLocale("de-CH"), "de");
   assert.equal(strings.pickLocale("fr_CA"), "fr");
   assert.equal(strings.pickLocale("en-US"), "en");
   assert.equal(strings.pickLocale("it-IT"), "en");
   assert.equal(strings.pickLocale(undefined), "en");
+  // Simplified Chinese; Traditional Chinese gets English.
+  for (const value of ["zh", "zh-CN", "zh_CN", "zh-Hans", "zh-Hans-CN", "zh-SG", "zh-Hans-HK"]) assert.equal(strings.pickLocale(value), "zh", value);
+  for (const value of ["zh-TW", "zh_HK", "zh-MO", "zh-Hant", "zh-Hant-TW"]) assert.equal(strings.pickLocale(value), "en", value);
+  assert.deepEqual(strings.LOCALES, ["de", "en", "fr", "zh"]);
+  const placeholders = (text) => (text.match(/\{\d+\}/g) || []).sort().join();
   for (const [key, entry] of Object.entries(strings.STRINGS)) {
-    assert.equal(entry.length, 3, `${key}: de, en, fr`);
+    assert.equal(entry.length, strings.LOCALES.length, `${key}: de, en, fr, zh`);
     for (const text of entry) assert.ok(text.trim(), `${key}: no empty text`);
+    for (const text of entry) assert.equal(placeholders(text), placeholders(entry[1]), `${key}: same placeholders`);
+  }
+  // Chinese text is Chinese (not a copied English one), except a few fixed values.
+  for (const [key, entry] of Object.entries(strings.STRINGS)) {
+    if (["signIn.codePlaceholder", "setup.placeholder", "capture.refused", "updates.ofSize"].includes(key)) continue;
+    assert.match(entry[3], /\p{Script=Han}/u, `${key}: Chinese`);
   }
   strings.setLocale("de");
   assert.equal(strings.t("menu.checkUpdates"), "Nach Updates suchen …");
@@ -383,6 +394,15 @@ const server = "https://flowplan.example.com";
   strings.setLocale("fr");
   assert.equal(strings.t("setup.connect"), "Se connecter");
   assert.equal(strings.t("menu.manageProfiles"), "Gérer les profils…");
+  strings.setLocale("zh-CN");
+  assert.equal(strings.locale(), "zh");
+  assert.equal(strings.tagOf(strings.locale()), "zh-Hans");
+  assert.equal(strings.t("menu.checkUpdates"), "检查更新…");
+  assert.equal(strings.t("profiles.removeConfirm", "工作"), "移除个人资料“工作”？");
+  assert.equal(strings.t("spelling.de-DE"), "德语");
+  // The instance's shorthand parser knows de, en and fr only.
+  assert.equal(strings.serverLocale("zh"), "en");
+  assert.equal(strings.serverLocale("fr"), "fr");
   strings.setLocale("xx");
   assert.equal(strings.t("setup.connect"), "Connect");
   assert.equal(strings.t("missing.key"), "missing.key");

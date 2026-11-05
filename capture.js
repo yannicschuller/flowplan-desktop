@@ -35,6 +35,7 @@ const targetRules = require("./capture-targets");
 const queueRules = require("./capture-queue");
 const historyRules = require("./capture-history");
 const actionRules = require("./capture-actions");
+const { serverLocale } = require("./strings");
 
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 const MAX_ATTACHMENTS = 10;
@@ -351,7 +352,7 @@ function setupCapture(deps) {
     if (!deps.isOnline() || entry?.legacy) return null;
     const clean = cleanInput(input);
     try {
-      return await deps.api(profile).capturePreview({ targetId: clean.targetId, text: clean.text, today: localDay(), literal: clean.literal, task: clean.task, locale: deps.locale() });
+      return await deps.api(profile).capturePreview({ targetId: clean.targetId, text: clean.text, today: localDay(), literal: clean.literal, task: clean.task, locale: serverLocale(deps.locale()) });
     } catch {
       return null;
     }
@@ -500,7 +501,8 @@ function setupCapture(deps) {
       task: input.task,
       today: localDay(),
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-      locale: deps.locale(),
+      // The instance reads shorthand in de, en or fr only.
+      locale: serverLocale(deps.locale()),
       ...(input.templateId ? { templateId: input.templateId } : {}),
       ...(Object.keys(input.cells).length ? { cells: input.cells } : {}),
       ...(input.link
