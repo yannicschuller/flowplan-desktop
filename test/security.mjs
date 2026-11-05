@@ -398,7 +398,7 @@ const server = "https://flowplan.example.com";
   assert.equal(strings.locale(), "zh");
   assert.equal(strings.tagOf(strings.locale()), "zh-Hans");
   assert.equal(strings.t("menu.checkUpdates"), "检查更新…");
-  assert.equal(strings.t("profiles.removeConfirm", "工作"), "移除个人资料“工作”？");
+  assert.equal(strings.t("profiles.removeConfirm", "工作"), "移除账户“工作”？");
   assert.equal(strings.t("spelling.de-DE"), "德语");
   // The instance's shorthand parser knows de, en and fr only.
   assert.equal(strings.serverLocale("zh"), "en");
