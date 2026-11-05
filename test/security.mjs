@@ -66,12 +66,16 @@ const server = "https://flowplan.example.com";
   assert.match(preload, /if \(!ai\) contextBridge\.exposeInMainWorld\("FlowplanDesktop", bridge\);/);
   assert.match(preload, /Object\.defineProperty\(window, "FlowplanDesktop", \{ value: Object\.freeze\(\{ \.\.\.parts, ai \}\), enumerable: true \}\)/);
   const instanceBridge = preload.slice(preload.indexOf("const bridge = {"));
-  const INSTANCE_CHANNELS = ["ai-availability", "ai-cancel", "ai-generate", "ai-stream", "drop-files", "notifications-enabled", "notifications-refresh", "notifications-set-enabled", "open-window", "spelling-add-word"];
+  const INSTANCE_CHANNELS = ["ai-availability", "ai-cancel", "ai-generate", "ai-stream", "drop-files", "history-state", "notifications-enabled", "notifications-refresh", "notifications-set-enabled", "open-window", "spelling-add-word"];
+  // ai-present asks before the page runs; ai-chunk and history-command come from the app.
   assert.deepEqual(
-    [...new Set([...instanceBridge.matchAll(/"flowplan:([a-z-]+)"/g)].map((m) => m[1]))].filter((c) => c !== "ai-present" && c !== "ai-chunk").sort(),
+    [...new Set([...instanceBridge.matchAll(/"flowplan:([a-z-]+)"/g)].map((m) => m[1]))].filter((c) => !["ai-present", "ai-chunk", "history-command"].includes(c)).sort(),
     INSTANCE_CHANNELS,
-    "notifications, a word, a window, dropped files, the on-device model – nothing else",
+    "notifications, a word, a window, dropped files, back and forward, the on-device model – nothing else",
   );
+  // Back and forward: two booleans in, a fixed word out – nothing else crosses.
+  assert.match(readFileSync(join(root, "main.js"), "utf8"), /handle\("flowplan:history-state", \(event, back, forward\) => void \(historyStates\.set\(event\.sender, \{ back: back === true, forward: forward === true \}\)/);
+  assert.match(instanceBridge, /if \(command === "back" \|\| command === "forward"\) callback\(command\);/);
   const main = readFileSync(join(root, "main.js"), "utf8");
   assert.deepEqual([...main.matchAll(/handle\("flowplan:([a-z-]+)",[^\n]*\{ instance: true \}\);/g)].map((m) => m[1]).sort(), INSTANCE_CHANNELS, "only these channels answer the instance");
   // What the instance channels take is checked again in the main process.

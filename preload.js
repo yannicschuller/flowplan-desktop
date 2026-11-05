@@ -13,7 +13,8 @@
 //   and switch them on or off; the text menu of the editor gets spelling
 //   suggestions (from the spell checker here, nothing leaves the page) and
 //   can add a word to the dictionary; the page menu can open a page of the
-//   instance in a window of its own. On a Mac with Apple Intelligence (and
+//   instance in a window of its own; back and forward (the menu, the swipe,
+//   the mouse's side buttons) go through the page's own history. On a Mac with Apple Intelligence (and
 //   the setting on, device-ai.js) it also has `ai`: Apple's on-device model,
 //   whose prompts and answers never leave the Mac. Nothing else: the web app
 //   runs without extra rights, and other sites (an identity provider, links)
@@ -125,6 +126,20 @@ else if (instance && (location.protocol === "https:" || location.protocol === "h
     },
     // A page of this instance in a window of its own.
     openWindow: (url) => void ipcRenderer.invoke("flowplan:open-window", String(url || "")).catch(() => {}),
+    // Back and forward (#125): the page says whether there is a step back
+    // or forward (the menu items), and goes when the app says so – the menu
+    // items "Back" and "Forward", the trackpad's swipe, the mouse's side
+    // buttons (main.js). The page goes through its own history; nothing
+    // else crosses.
+    history: {
+      state: (back, forward) => void ipcRenderer.invoke("flowplan:history-state", back === true, forward === true).catch(() => {}),
+      onCommand: (callback) => {
+        if (typeof callback !== "function") return;
+        ipcRenderer.on("flowplan:history-command", (_event, command) => {
+          if (command === "back" || command === "forward") callback(command);
+        });
+      },
+    },
   };
   // Apple's on-device model: main.js says whether it is there (a Mac build
   // with the helper, the setting on, this instance's main frame). Without

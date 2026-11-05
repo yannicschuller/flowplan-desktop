@@ -181,6 +181,42 @@ const hintPage = () => windowWith(app, () => location.pathname.endsWith("hint.ht
   console.log("✔ Brücke der Instanz");
 }
 
+// Back and forward (#125): the menu items follow what the page reports and
+// send their command to it, as do the trackpad's swipe (macOS) and the
+// mouse's side buttons (app-command); the page goes through its own history.
+{
+  const menuItem = (id) => app.evaluate(({ Menu }, id) => {
+    const item = Menu.getApplicationMenu().getMenuItemById(id);
+    return { enabled: item.enabled, label: item.label, accelerator: item.accelerator };
+  }, id);
+  const { label, accelerator } = await menuItem("history-back");
+  assert.deepEqual({ label, accelerator }, { label: "Back", accelerator: "Alt+Left" });
+  assert.equal((await menuItem("history-forward")).accelerator, "Alt+Right");
+  await main.evaluate(() => window.FlowplanDesktop.history.state(true, false));
+  await until(async () => (await menuItem("history-back")).enabled && !(await menuItem("history-forward")).enabled, "back enabled, forward not");
+  await main.evaluate(() => window.FlowplanDesktop.history.state(false, true));
+  await until(async () => !(await menuItem("history-back")).enabled && (await menuItem("history-forward")).enabled, "forward enabled, back not");
+  await main.evaluate(() => window.FlowplanDesktop.history.state(true, true));
+  await until(async () => (await menuItem("history-back")).enabled, "both");
+  await clickMenu(app, "history-back");
+  await clickMenu(app, "history-forward");
+  await app.evaluate(({ BrowserWindow }, origin) => {
+    const w = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().startsWith(origin));
+    w.emit("swipe", {}, "left");
+    w.emit("swipe", {}, "right");
+    w.emit("swipe", {}, "up");
+    w.emit("app-command", {}, "browser-backward");
+    w.emit("app-command", {}, "browser-forward");
+    w.emit("app-command", {}, "media-play-pause");
+  }, instance.origin);
+  await until(async () => (await main.evaluate(() => window.historyCommands.length)) === 6, "six commands");
+  assert.deepEqual(await main.evaluate(() => window.historyCommands), ["back", "forward", "back", "forward", "back", "forward"]);
+  // Only the two words reach the page.
+  await main.evaluate(() => window.FlowplanDesktop.history.state("yes", 1));
+  await until(async () => !(await menuItem("history-back")).enabled && !(await menuItem("history-forward")).enabled, "anything but true is false");
+  console.log("✔ Zurück und Vorwärts: Menü, Wischen, Maustasten");
+}
+
 // Pages in windows of their own: Shift-click, the bridge; remembered.
 {
   await main.click("#own", { modifiers: ["Shift"] });
