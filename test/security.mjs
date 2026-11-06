@@ -67,9 +67,9 @@ const server = "https://flowplan.example.com";
   assert.match(preload, /Object\.defineProperty\(window, "FlowplanDesktop", \{ value: Object\.freeze\(\{ \.\.\.parts, ai \}\), enumerable: true \}\)/);
   const instanceBridge = preload.slice(preload.indexOf("const bridge = {"));
   const INSTANCE_CHANNELS = ["ai-availability", "ai-cancel", "ai-generate", "ai-stream", "drop-files", "history-state", "notifications-enabled", "notifications-refresh", "notifications-set-enabled", "open-window", "spelling-add-word"];
-  // ai-present asks before the page runs; ai-chunk and history-command come from the app.
+  // ai-present and device-key ask before the page runs; ai-chunk and history-command come from the app.
   assert.deepEqual(
-    [...new Set([...instanceBridge.matchAll(/"flowplan:([a-z-]+)"/g)].map((m) => m[1]))].filter((c) => !["ai-present", "ai-chunk", "history-command"].includes(c)).sort(),
+    [...new Set([...instanceBridge.matchAll(/"flowplan:([a-z-]+)"/g)].map((m) => m[1]))].filter((c) => !["ai-present", "device-key", "ai-chunk", "history-command"].includes(c)).sort(),
     INSTANCE_CHANNELS,
     "notifications, a word, a window, dropped files, back and forward, the on-device model – nothing else",
   );
@@ -78,6 +78,11 @@ const server = "https://flowplan.example.com";
   assert.match(instanceBridge, /if \(command === "back" \|\| command === "forward"\) callback\(command\);/);
   const main = readFileSync(join(root, "main.js"), "utf8");
   assert.deepEqual([...main.matchAll(/handle\("flowplan:([a-z-]+)",[^\n]*\{ instance: true \}\);/g)].map((m) => m[1]).sort(), INSTANCE_CHANNELS, "only these channels answer the instance");
+  // The device key (device-key.js, #133): only the main frame of the
+  // calling session's own instance, for that profile; the page gets a frozen copy.
+  assert.match(main, /ipcMain\.on\("flowplan:device-key", \(event\) => \{\s*let key = null;\s*try \{\s*const owner = fromOwnInstance\(event\) \? ownerOf\(event\.sender\.session\) : null;\s*if \(owner && app\.isReady\(\)\) key = deviceKeys\(\)\.get\(owner\.id\);/);
+  assert.match(instanceBridge, /bridge\.deviceKey = Object\.freeze\(\{ id: key\.id, secret: key\.secret \}\)/);
+  assert.match(main, /capture\?\.forgetProfile\(id\);\s*deviceKeys\(\)\.forget\(id\);/, "removing the profile removes its key");
   // What the instance channels take is checked again in the main process.
   assert.match(main, /handle\("flowplan:spelling-add-word", \(event, word\) => dictionaryWord\(word\) && /);
   assert.match(main, /handle\("flowplan:drop-files", \(event, paths\) => void takeFiles\(fileRules\.droppedPaths\(paths\)\)/);

@@ -193,6 +193,10 @@ macOS and Windows register the link type when the app is installed.
 
 The code is valid for one minute, works once and only together with the secret that never leaves the app – a link caught elsewhere is useless, and the app ignores codes for sign-ins it did not start or for another instance. E-mail and password sign in directly in the app. This needs a Flowplan server newer than 0.3.2.
 
+### How long the app stays signed in
+
+The instance gives the app its long sign-in (by default 90 days without use) only when the app proves the sign-in its own – the `FlowplanDesktop/` user agent alone, which any browser can send, does not count (Flowplan's `lib/app-devices.ts`). The browser hand-off above is that proof. For e-mail and password, the app creates a random **device key** per profile (an id and a 32-byte secret, [`device-key.js`](device-key.js)), keeps it in the user data folder (`device-keys/<profile>.json`, encrypted with `safeStorage` like quick capture's queue; mode 0600 without a key store) and hands it only to the main frame of that profile's instance (`window.FlowplanDesktop.deviceKey`). The sign-in form sends it with the password; the instance registers it at the first sign-in of the account on this computer and wants the same key afterwards. Removing the profile removes the key. Version 1.3.0 and older have none: their password sign-ins last like a browser's.
+
 ## Updates
 
 The app checks the latest release of this repository 15 seconds after starting, every six hours and via **Nach Updates suchen …** in the menu ([`updates.js`](updates.js), [electron-updater](https://www.electron.build/auto-update)). Nothing pops up in the middle of work: no dialog, no window that takes the focus. A small toast in the bottom corner of the window ([`pages/update.html`](pages/update.html), a view inside the window that never takes the focus by itself) shows the download with percent, size and speed (**Ausblenden** hides it), the progress also shows on the Dock icon or taskbar button, and typing goes on undisturbed.
