@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, readFileSync, readdirSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { standIn, INBOX, WORKSPACE, SPACE, PAGE, TASK_PAGE, PNG, USER, PROJECTS, JOURNAL } from "./stand-in.mjs";
@@ -28,6 +28,7 @@ const targetRules = require("../capture-targets.js");
 const queueRules = require("../capture-queue.js");
 const historyRules = require("../capture-history.js");
 const captureStore = require("../capture-store.js");
+const { createDeviceKeys, validDeviceKey } = require("../device-key.js");
 const actionRules = require("../capture-actions.js");
 const onboarding = require("../onboarding.js");
 const screenRules = require("../screen-capture.js");
@@ -441,6 +442,38 @@ const server = "https://flowplan.example.com";
   assert.equal(audioOk(webm, "text/html"), false);
   assert.equal(audioOk(Buffer.from("<script>alert(1)</script>"), "audio/webm"), false, "the content must look like audio");
   console.log("✔ Eingaben des Erfassen-Fensters geprüft");
+}
+
+// This computer's key per profile (device-key.js, #133 in Flowplan): made
+// once, kept encrypted (or 0600 without a key store), the same afterwards,
+// replaced when it cannot be read, gone with the profile.
+{
+  const dir = mkdtempSync(join(tmpdir(), "flowplan-device-keys-"));
+  const cipher = { available: true, encrypt: (text) => Buffer.from(text).map((b) => b ^ 0x5a), decrypt: (buffer) => Buffer.from(buffer).map((b) => b ^ 0x5a).toString() };
+  const keys = createDeviceKeys({ dir, cipher });
+  const first = keys.get("a1");
+  assert.ok(validDeviceKey(first));
+  assert.match(first.id, /^[A-Za-z0-9_-]{22}$/);
+  assert.match(first.secret, /^[A-Za-z0-9_-]{43}$/);
+  const raw = readFileSync(join(dir, "a1.json"), "utf8");
+  assert.doesNotMatch(raw, new RegExp(first.secret), "encrypted at rest");
+  assert.deepEqual(createDeviceKeys({ dir, cipher, random: () => { throw new Error("not again"); } }).get("a1"), first, "the next start reads it");
+  assert.notEqual(keys.get("b2").secret, first.secret, "every profile has its own");
+  assert.equal(keys.get("../x"), null, "profile ids are checked");
+  // Without a key store: plain, but readable only by the user.
+  const plainDir = mkdtempSync(join(tmpdir(), "flowplan-device-keys-plain-"));
+  const plain = createDeviceKeys({ dir: plainDir, cipher: { available: false } });
+  const key = plain.get("a1");
+  assert.equal(JSON.parse(readFileSync(join(plainDir, "a1.json"), "utf8")).encrypted, false);
+  if (process.platform !== "win32") assert.equal(statSync(join(plainDir, "a1.json")).mode & 0o777, 0o600);
+  assert.deepEqual(plain.get("a1"), key);
+  // Encrypted, the key store gone: a new key (a new device for the instance).
+  const replaced = createDeviceKeys({ dir, cipher: { available: false } }).get("a1");
+  assert.ok(validDeviceKey(replaced));
+  assert.notEqual(replaced.secret, first.secret);
+  plain.forget("a1");
+  assert.equal(existsSync(join(plainDir, "a1.json")), false, "gone with the profile");
+  console.log("✔ Geräteschlüssel pro Profil");
 }
 
 // The offline queue: kept encrypted (or said plainly that it is not), sent

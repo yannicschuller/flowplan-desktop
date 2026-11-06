@@ -178,6 +178,16 @@ const hintPage = () => windowWith(app, () => location.pathname.endsWith("hint.ht
   });
   await sleep(500);
   assert.equal(await seen(app, "files"), 0, "a synthetic drop is not the person's");
+  // This computer's key for the instance (device-key.js): there, frozen,
+  // kept for the profile – the same after a reload.
+  const key = await main.evaluate(() => window.FlowplanDesktop.deviceKey);
+  assert.match(key?.id || "", /^[A-Za-z0-9_-]{22}$/);
+  assert.match(key?.secret || "", /^[A-Za-z0-9_-]{43}$/);
+  assert.equal(await main.evaluate(() => Object.isFrozen(window.FlowplanDesktop.deviceKey)), true);
+  assert.ok(existsSync(join(dir, "device-keys", "a1.json")), "kept in the user data folder");
+  await main.reload();
+  await main.waitForFunction(() => !!window.FlowplanDesktop);
+  assert.deepEqual(await main.evaluate(() => window.FlowplanDesktop.deviceKey), key, "the same after a reload");
   console.log("✔ Brücke der Instanz");
 }
 

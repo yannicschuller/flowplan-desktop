@@ -14,7 +14,9 @@
 //   suggestions (from the spell checker here, nothing leaves the page) and
 //   can add a word to the dictionary; the page menu can open a page of the
 //   instance in a window of its own; back and forward (the menu, the swipe,
-//   the mouse's side buttons) go through the page's own history. On a Mac with Apple Intelligence (and
+//   the mouse's side buttons) go through the page's own history; the
+//   sign-in form gets this computer's key for the instance (deviceKey,
+//   device-key.js), so a password sign-in lasts as long as the app's. On a Mac with Apple Intelligence (and
 //   the setting on, device-ai.js) it also has `ai`: Apple's on-device model,
 //   whose prompts and answers never leave the Mac. Nothing else: the web app
 //   runs without extra rights, and other sites (an identity provider, links)
@@ -141,6 +143,12 @@ else if (instance && (location.protocol === "https:" || location.protocol === "h
       },
     },
   };
+  // This computer's key for the instance (device-key.js): only when main.js
+  // has one for this profile.
+  try {
+    const key = ipcRenderer.sendSync("flowplan:device-key");
+    if (key && typeof key.id === "string" && typeof key.secret === "string") bridge.deviceKey = Object.freeze({ id: key.id, secret: key.secret });
+  } catch {}
   // Apple's on-device model: main.js says whether it is there (a Mac build
   // with the helper, the setting on, this instance's main frame). Without
   // it, window.FlowplanDesktop has no `ai` at all.

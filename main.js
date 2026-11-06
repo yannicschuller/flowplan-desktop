@@ -46,6 +46,7 @@ const contextMenu = require("./context-menu");
 const { createInstanceApi, pageAddress } = require("./instance-api");
 const { setupCapture } = require("./capture");
 const { createStore: createCaptureStore } = require("./capture-store");
+const { createDeviceKeys } = require("./device-key");
 const onboarding = require("./onboarding");
 const { setupHint } = require("./hint");
 const { setupScreenCapture } = require("./screen-capture");
@@ -91,6 +92,11 @@ function captureCipher() {
     return { available: false };
   }
 }
+// This computer's key per profile for the instance's sign-in form
+// (device-key.js), kept like quick capture's files. Made once the app is
+// ready (the key store needs it).
+let deviceKeyStore = null;
+const deviceKeys = () => (deviceKeyStore ??= createDeviceKeys({ dir: path.join(app.getPath("userData"), "device-keys"), cipher: captureCipher() }));
 // The app's own settings (settings.js), checked every time they are read.
 const settings = () => appSettings.settingsOf(readConfig());
 // Addresses are https (or http only for local development).
@@ -641,6 +647,7 @@ async function removeProfileAsk(id) {
   apis.delete(id);
   notifier?.forgetProfile(id);
   capture?.forgetProfile(id);
+  deviceKeys().forget(id);
   if (wasActive || winProfile === id) replaceWindow(activeProfile());
   await forgetSession(profile);
   return true;
@@ -1326,6 +1333,17 @@ handle("flowplan:history-state", (event, back, forward) => void (historyStates.s
 // main frame only, every request checked again (device-ai-rules.js).
 ipcMain.on("flowplan:ai-present", (event) => {
   event.returnValue = fromOwnInstance(event) && aiEnabled();
+});
+// The device key of the calling page's profile (device-key.js): asked by
+// the preload, synchronously, before the page runs – only the main frame of
+// the profile's own instance gets it.
+ipcMain.on("flowplan:device-key", (event) => {
+  let key = null;
+  try {
+    const owner = fromOwnInstance(event) ? ownerOf(event.sender.session) : null;
+    if (owner && app.isReady()) key = deviceKeys().get(owner.id);
+  } catch {}
+  event.returnValue = key;
 });
 handle("flowplan:ai-availability", async () => ({ value: await aiAvailability() }), { instance: true });
 handle("flowplan:ai-generate", (event, input) => aiRequest(event, "generate", input), { instance: true });
