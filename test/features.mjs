@@ -33,6 +33,8 @@ const actionRules = require("../capture-actions.js");
 const onboarding = require("../onboarding.js");
 const screenRules = require("../screen-capture.js");
 const guards = require("../guards.js");
+// sign-in.js needs Electron only once its sign-in is set up.
+const { passkeyWay, chooseWebAuthnAccount } = require("../sign-in.js");
 strings.setLocale("en");
 const { t } = strings;
 const server = "https://flowplan.example.com";
@@ -697,5 +699,28 @@ const server = "https://flowplan.example.com";
   await instance.stop();
   await assert.rejects(client.captureSave(json), (e) => e.kind === "offline" && queueRules.retryable(e));
   console.log("✔ Schnell erfassen gegen die Instanz");
+}
+// Passkeys (#165): in the window on Windows (Windows Hello), in the browser
+// on macOS and Linux; FLOWPLAN_PASSKEYS decides instead. Several passkeys:
+// one picked, only for the instance.
+{
+  assert.equal(passkeyWay({ platform: "win32", env: {} }), "window");
+  assert.equal(passkeyWay({ platform: "darwin", env: {} }), "browser");
+  assert.equal(passkeyWay({ platform: "linux", env: {} }), "browser");
+  assert.equal(passkeyWay({ platform: "linux", env: { FLOWPLAN_PASSKEYS: "Window" } }), "window");
+  assert.equal(passkeyWay({ platform: "win32", env: { FLOWPLAN_PASSKEYS: "browser" } }), "browser");
+  assert.equal(passkeyWay({ platform: "win32", env: { FLOWPLAN_PASSKEYS: "elsewhere" } }), "window", "anything else: the platform decides");
+  const accounts = [{ credentialId: "one", name: "alex@example.org" }, { credentialId: "two", displayName: "Alex" }, { credentialId: "three" }, { name: "no id" }];
+  const asked = [];
+  const ask = (answer) => async (labels) => (asked.push(labels), answer);
+  assert.equal(await chooseWebAuthnAccount({ accounts }, { allowed: true, ask: ask(1) }), "two");
+  assert.deepEqual(asked.pop(), ["alex@example.org", "Alex", t("passkey.unnamed")]);
+  assert.equal(await chooseWebAuthnAccount({ accounts }, { allowed: true, ask: ask(-1) }), null, "cancelled");
+  assert.equal(await chooseWebAuthnAccount({ accounts }, { allowed: true, ask: ask(7) }), null, "no such account");
+  assert.equal(await chooseWebAuthnAccount({ accounts: accounts.slice(0, 1) }, { allowed: true, ask: ask(0) }), "one");
+  assert.equal(await chooseWebAuthnAccount({ accounts }, { allowed: false, ask: ask(0) }), null, "another site");
+  assert.equal(await chooseWebAuthnAccount({}, { allowed: true, ask: ask(0) }), null);
+  assert.equal(asked.length, 2, "one passkey, another site, none: nothing asked");
+  console.log("✔ Passkeys im Fenster (Windows) oder im Browser");
 }
 console.log("features: ok");

@@ -88,5 +88,15 @@ jobs:
           else
             echo "::warning::xvfb-run is not installed on this runner; the Apple Intelligence app test was skipped."
           fi
+      - name: Passkeys (Electron under xvfb)
+        # Windows Hello in the window (simulated: WebAuthn against Chromium's
+        # virtual authenticator), the fallback to the browser, and macOS/Linux
+        # unchanged.
+        run: |
+          if command -v xvfb-run > /dev/null; then
+            xvfb-run -a npm run test:passkeys
+          else
+            echo "::warning::xvfb-run is not installed on this runner; the passkeys test was skipped."
+          fi
       - name: Test build (Linux, unpacked)
         run: npx electron-builder --linux dir --publish never

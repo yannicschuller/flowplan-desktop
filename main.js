@@ -33,7 +33,7 @@ const {
 } = require("electron");
 const path = require("node:path");
 const updates = require("./updates");
-const { setupBrowserSignIn } = require("./sign-in");
+const { setupBrowserSignIn, passkeyWay, chooseWebAuthnAccount } = require("./sign-in");
 const { fallbackFor } = require("./fallback");
 const strings = require("./strings");
 const { isOwnPage, isInstancePage, allowedInWindow, isSignInRedirect, permissionAllowed, classifyHealth, defaultPagesDir, sameOrigin: sameOriginAs, instancePageUrl, opensOwnWindow, externalUrl, dictionaryWord, fromWindow } = require("./guards");
@@ -216,6 +216,31 @@ function prepareSession(ses) {
     const fromInstance = !!owner && owner.id === state.activeProfile && sameOriginAs(wc.getURL(), owner.server);
     done(permissionAllowed(permission, details, fromInstance));
   });
+  // Passkeys in the window (Windows, sign-in.js): when Chromium itself asks
+  // which of several passkeys to use, the person picks one in a dialog – for
+  // a page of the active profile's own instance only.
+  if (passkeyWay() === "window")
+    ses.on("select-webauthn-account", (_event, details, callback) => {
+      const owner = ownerOf(ses);
+      const frameOrigin = details?.frame?.origin || details?.frame?.url || "";
+      const allowed = !!owner && owner.id === state.activeProfile && sameOriginAs(frameOrigin, owner.server);
+      const ask = async (labels) => {
+        const options = {
+          type: "question",
+          message: t("passkey.choose"),
+          detail: t("passkey.chooseDetail", details?.relyingPartyId || ""),
+          buttons: [...labels, t("signIn.cancel")],
+          cancelId: labels.length,
+          defaultId: 0,
+          noLink: true,
+        };
+        const { response } = win && !win.isDestroyed() ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options);
+        return response < labels.length ? response : -1;
+      };
+      chooseWebAuthnAccount(details, { allowed, ask })
+        .catch(() => null)
+        .then((id) => (id ? callback(id) : callback()));
+    });
   ses.webRequest.onBeforeRedirect((details) => {
     if (details.resourceType !== "mainFrame") return;
     const owner = ownerOf(ses);
@@ -282,7 +307,7 @@ function makeWindow(profile, { bounds = {}, title = "Flowplan" } = {}) {
       spellcheck: true,
       ...(partition ? { partition } : {}),
       // The preload offers window.FlowplanDesktop on this instance alone.
-      additionalArguments: profile ? [`--flowplan-instance=${profile.server}`, `--flowplan-version=${app.getVersion()}`] : [],
+      additionalArguments: profile ? [`--flowplan-instance=${profile.server}`, `--flowplan-version=${app.getVersion()}`, `--flowplan-passkeys=${passkeyWay()}`] : [],
     },
   });
   windowProfile.set(w, profile ? profile.id : null);

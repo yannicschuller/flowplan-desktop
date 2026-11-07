@@ -83,6 +83,60 @@ const page = (origin) => `<!doctype html>
 </script>
 </body></html>`;
 
+// The sign-in page's passkey rules (components/login.tsx in flowplan, #165):
+// where the desktop app says passkeys sign in in its window, the page's own
+// button runs WebAuthn (navigator.credentials.get), and when that fails or
+// is cancelled "Im Browser anmelden" links to /api/auth/desktop; everywhere
+// else in the app "Mit Passkey anmelden" is that link. The settings' "Add a
+// passkey" (navigator.credentials.create) is a button as well.
+const loginPage = () => `<!doctype html>
+<html><head><meta charset="utf-8"><title>Sign in</title></head>
+<body>
+<h1>Sign in</h1>
+<div id="error" role="alert"></div>
+<div id="buttons"></div>
+<button id="add-passkey">Add a passkey</button>
+<script>
+  const bytes = (text) => Uint8Array.from(atob(text.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+  const post = async (path, body) => {
+    const r = await fetch("/api/auth/" + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || r.statusText);
+    return data;
+  };
+  const inWindow = window.FlowplanDesktop?.passkeys === "window" && typeof PublicKeyCredential === "function";
+  const desktopLink = (id, text) => '<a id="' + id + '" href="/api/auth/desktop">' + text + "</a>";
+  const buttons = document.getElementById("buttons");
+  window.signedIn = null;
+  if (navigator.userAgent.includes("FlowplanDesktop/") && !inWindow) buttons.innerHTML = desktopLink("passkey-link", "Mit Passkey anmelden");
+  else buttons.innerHTML = '<button id="passkey">Mit Passkey anmelden</button>';
+  document.getElementById("passkey")?.addEventListener("click", async () => {
+    document.getElementById("error").textContent = "";
+    try {
+      const options = await post("passkey-options");
+      const credential = await navigator.credentials.get({ publicKey: { challenge: bytes(options.challenge), rpId: options.rpId, allowCredentials: [], userVerification: "required", timeout: 10000 } });
+      window.signedIn = await post("passkey", { id: credential.id, rpId: options.rpId });
+    } catch (e) {
+      document.getElementById("error").textContent = "Passkey sign-in was cancelled.";
+      if (inWindow && !document.getElementById("browser-fallback")) buttons.insertAdjacentHTML("beforeend", desktopLink("browser-fallback", "Im Browser anmelden"));
+    }
+  });
+  document.getElementById("add-passkey").addEventListener("click", async () => {
+    try {
+      const options = await post("passkey-register-options");
+      const credential = await navigator.credentials.create({ publicKey: {
+        challenge: bytes(options.challenge), rp: { id: options.rpId, name: "Stand-in" },
+        user: { id: bytes(options.userId), name: "alex@example.org", displayName: "Alex" },
+        pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+        authenticatorSelection: { residentKey: "required", userVerification: "required" }, timeout: 10000 } });
+      window.registered = credential.id;
+    } catch (e) {
+      window.registered = "failed: " + e.name;
+    }
+  });
+</script>
+</body></html>`;
+
 // options.today: the day tasks are due; options.capture: the answer of
 // GET /api/capture; options.status: path → forced status.
 export async function standIn(options = {}) {
@@ -117,6 +171,11 @@ export async function standIn(options = {}) {
       if (req.method !== "GET" && req.headers.origin !== origin) return json(403, { error: "Ungültiger Anfrageursprung." });
       if (state.signedOut) return json(401, { error: "Bitte melde dich an." });
     }
+    // Passkeys (the sign-in page above): the challenge for the instance's
+    // own host as relying party, and what was signed in with.
+    if (url.pathname === "/api/auth/passkey-options" || url.pathname === "/api/auth/passkey-register-options")
+      return json(200, { challenge: crypto.randomBytes(32).toString("base64url"), rpId: new URL(origin).hostname, userId: crypto.randomBytes(16).toString("base64url") });
+    if (url.pathname === "/api/auth/passkey") return json(200, { ok: true, ...JSON.parse(body.toString() || "{}") });
     if (url.pathname === "/api/bootstrap")
       return json(200, {
         user: { id: USER, name: "Alex <Morgan>" },
@@ -217,7 +276,7 @@ export async function standIn(options = {}) {
     if (url.pathname === "/api/notifications") return json(200, { notifications: [], unread: 2 });
     if (url.pathname.startsWith("/api/")) return json(404, { error: "Nicht gefunden." });
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(page(origin));
+    res.end(url.pathname === "/login" ? loginPage() : page(origin));
   });
   await new Promise((done) => server.listen(options.port || 0, "127.0.0.1", done));
   const port = server.address().port;

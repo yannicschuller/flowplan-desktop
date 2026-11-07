@@ -435,5 +435,6 @@ const server = "https://flowplan.example.com";
   assert.match(ci, /test:app/, "CI runs the app test");
   assert.match(ci, /test:device-ai\n/, "CI runs the on-device model test");
   assert.match(ci, /test:device-ai-app/, "CI runs the on-device model's app test");
+  assert.match(ci, /test:passkeys/, "CI runs the passkeys test");
   console.log("✔ CI prüft Electron und Tests");
 }

@@ -177,7 +177,9 @@ For development on a Mac, `swift build -c release` in `native/device-ai` makes t
 
 ## Signing in with passkeys and SSO
 
-Passkeys (iCloud Keychain, Windows Hello, password managers) and identity providers that ask for one only work in a real browser. In the app, **Mit Passkey anmelden** and **Mit SSO anmelden** therefore open the sign-in in the default browser:
+**On Windows, passkeys sign in right in the app window.** Chromium hands WebAuthn to Windows' own API there, so **Mit Passkey anmelden** / **Sign in with a passkey** opens the native Windows Hello prompt (face, fingerprint, PIN, a security key or a phone) over the app – for the instance's own origin, as in a browser. The app says so to the instance's pages (`window.FlowplanDesktop.passkeys = "window"`, [`preload.js`](preload.js)); if Chromium itself asks which of several passkeys to use, the app shows a small dialog. Is the prompt cancelled or does it fail, the sign-in page offers **Im Browser anmelden** / **Sign in in the browser** – the browser hand-off below. Adding a passkey in the settings also works in the window. This needs a Flowplan server newer than 0.8.13; older servers keep handing passkeys to the browser. `FLOWPLAN_PASSKEYS=window` or `browser` picks the way on any system (used by [`test/passkeys.mjs`](test/passkeys.mjs)).
+
+On macOS and Linux, passkeys (iCloud Keychain, password managers) and – on every system – identity providers that ask for one only work in a real browser. In the app, **Mit Passkey anmelden** and **Mit SSO anmelden** therefore open the sign-in in the default browser:
 
 1. The app creates a random secret and opens the instance with its hash (`/api/auth/desktop`). A small window **Weiter im Browser** / **Continue in the browser** waits in the app.
 2. You sign in in the browser as usual and confirm **In der App anmelden** / **Sign in to the app**.

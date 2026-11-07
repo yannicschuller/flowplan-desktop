@@ -1,7 +1,7 @@
-// Sign-in through the system browser: passkeys (iCloud Keychain, Windows
-// Hello, password managers) and identity providers that ask for one only
-// work there. The instance's sign-in page links "Mit Passkey anmelden" and
-// "Mit SSO anmelden" to /api/auth/desktop inside the app; the app keeps a
+// Sign-in through the system browser: passkeys (iCloud Keychain, password
+// managers) and identity providers that ask for one only work there. The
+// instance's sign-in page links "Mit Passkey anmelden" and "Mit SSO
+// anmelden" to /api/auth/desktop inside the app; the app keeps a
 // random verifier, opens the browser with its SHA-256 challenge and waits
 // for flowplan://sign-in with a one-time code. Only this app run, holding
 // the verifier, can redeem the code – once, within a minute.
@@ -10,6 +10,18 @@
 // and takes the link or code by hand: where flowplan:// never reaches the
 // app (a Linux AppImage that is not integrated, the tar.gz), the user copies
 // the "Flowplan-App öffnen" link from the browser's last page and pastes it.
+//
+// Passkeys on Windows (#165) stay in the window: Chromium hands
+// navigator.credentials to Windows' own WebAuthn API (webauthn.dll), whose
+// prompt – Windows Hello, a security key, a phone – opens over the app, and
+// the origin and relying party are the instance's own. The bridge says so
+// (window.FlowplanDesktop.passkeys = "window", preload.js); the instance's
+// sign-in page then offers its own passkey button and, should the prompt
+// fail or be cancelled, "Im Browser anmelden" – the link to
+// /api/auth/desktop, which still goes through the browser. On macOS
+// Electron reaches neither iCloud Keychain nor a password manager, and Linux
+// has no platform authenticator: there passkeys keep going to the browser.
+// SSO goes to the browser everywhere.
 const { app, shell, dialog, BrowserWindow, nativeTheme } = require("electron");
 const { createHash, randomBytes } = require("node:crypto");
 const path = require("node:path");
@@ -174,6 +186,26 @@ function setupBrowserSignIn({ server, getWindow, preload, locale = () => "en" })
     pendingCount: () => pending.size,
   };
 }
+// Where passkeys are used: "window" on Windows, "browser" elsewhere.
+// FLOWPLAN_PASSKEYS=window|browser decides instead (the tests; trying the
+// window elsewhere, e.g. with a security key on Linux).
+function passkeyWay({ platform = process.platform, env = process.env } = {}) {
+  const wanted = String(env.FLOWPLAN_PASSKEYS || "").toLowerCase();
+  if (wanted === "window" || wanted === "browser") return wanted;
+  return platform === "win32" ? "window" : "browser";
+}
+// Several passkeys for the instance on one authenticator (Chromium's own
+// account choice – Windows shows its own): one is taken, from several the
+// person picks one (ask(labels) → index, or -1). Only for a page of the
+// window's own instance; anything else is cancelled (null).
+async function chooseWebAuthnAccount(details, { allowed, ask }) {
+  const accounts = (Array.isArray(details?.accounts) ? details.accounts : []).filter((a) => a && typeof a.credentialId === "string" && a.credentialId);
+  if (!allowed || !accounts.length) return null;
+  if (accounts.length === 1) return accounts[0].credentialId;
+  const labels = accounts.map((a) => String(a.name || a.displayName || "").slice(0, 120) || t("passkey.unnamed"));
+  const index = await ask(labels);
+  return Number.isInteger(index) && index >= 0 && index < accounts.length ? accounts[index].credentialId : null;
+}
 // flowplan://sign-in?… – the hand-off of a sign-in, nothing else.
 function isSignInLink(link) {
   try {
@@ -190,4 +222,4 @@ function sameOrigin(url, origin) {
     return false;
   }
 }
-module.exports = { setupBrowserSignIn, isSignInLink };
+module.exports = { setupBrowserSignIn, isSignInLink, passkeyWay, chooseWebAuthnAccount };

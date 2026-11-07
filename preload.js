@@ -16,7 +16,9 @@
 //   instance in a window of its own; back and forward (the menu, the swipe,
 //   the mouse's side buttons) go through the page's own history; the
 //   sign-in form gets this computer's key for the instance (deviceKey,
-//   device-key.js), so a password sign-in lasts as long as the app's. On a Mac with Apple Intelligence (and
+//   device-key.js), so a password sign-in lasts as long as the app's, and
+//   learns whether passkeys sign in right here (Windows) or in the browser
+//   (passkeys, sign-in.js). On a Mac with Apple Intelligence (and
 //   the setting on, device-ai.js) it also has `ai`: Apple's on-device model,
 //   whose prompts and answers never leave the Mac. Nothing else: the web app
 //   runs without extra rights, and other sites (an identity provider, links)
@@ -112,6 +114,9 @@ else if (instance && (location.protocol === "https:" || location.protocol === "h
   const bridge = {
     platform: "desktop",
     version: argument("flowplan-version"),
+    // Where passkeys sign in (#165, sign-in.js): "window" – the page's own
+    // WebAuthn, Windows Hello over the app – or "browser" (the hand-off).
+    passkeys: argument("flowplan-passkeys") === "window" ? "window" : "browser",
     notifications: {
       enabled: () => ipcRenderer.invoke("flowplan:notifications-enabled"),
       setEnabled: (on) => ipcRenderer.invoke("flowplan:notifications-set-enabled", on === true),

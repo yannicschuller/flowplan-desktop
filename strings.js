@@ -369,6 +369,10 @@
     "signIn.paste": ["Code einfügen", "Paste code", "Coller le code", "粘贴代码"],
     "signIn.pasting": ["Melde an …", "Signing in…", "Connexion…", "正在登录…"],
     "signIn.cancel": ["Abbrechen", "Cancel", "Annuler", "取消"],
+    // Passkeys in the window (Windows, sign-in.js): several passkeys for one instance
+    "passkey.choose": ["Passkey wählen", "Choose a passkey", "Choisir une clé d'accès", "选择通行密钥"],
+    "passkey.chooseDetail": ["Für {0} sind mehrere Passkeys gespeichert. Mit welchem möchtest du dich anmelden?", "Several passkeys are saved for {0}. Which one do you want to sign in with?", "Plusieurs clés d'accès sont enregistrées pour {0}. Avec laquelle voulez-vous vous connecter ?", "{0} 保存了多个通行密钥。你要使用哪一个登录？"],
+    "passkey.unnamed": ["Passkey ohne Namen", "Unnamed passkey", "Clé d'accès sans nom", "未命名的通行密钥"],
 
     // Setup page (pages/setup.html)
     "setup.title": ["Flowplan einrichten", "Set up Flowplan", "Configurer Flowplan", "设置 Flowplan"],
