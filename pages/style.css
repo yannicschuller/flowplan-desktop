@@ -6,6 +6,7 @@
   --blue: #3b3fd8;
   --blue-light: #ecebfc;
   --danger: #e03131;
+  --suggest-bg: #f3e8ff;
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -16,6 +17,7 @@
     --border: #2e2c35;
     --blue: #959bff;
     --blue-light: #2a2a55;
+    --suggest-bg: #3b2a5c;
   }
 }
 * {
@@ -472,7 +474,8 @@ body.capture {
   color: var(--muted);
 }
 .capture-chip.suggest {
-  background: #f3e8ff;
+  /* AI suggestions: a soft violet, dark in dark mode (#172). */
+  background: var(--suggest-bg);
 }
 /* "Text verbessern" (#172): the AI's text as a preview, taken or not. */
 .capture-improved {
