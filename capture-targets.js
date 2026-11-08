@@ -18,7 +18,7 @@ const KINDS = ["database", "document", "journal"];
 const text = (value, max) => (typeof value === "string" ? value.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, max) : "");
 const isTargetId = (value) => value === "inbox" || (typeof value === "string" && UUID.test(value));
 
-// The instance's answer → { inbox, targets, encryptedExcluded, voice, suggest, … }.
+// The instance's answer → { inbox, targets, encryptedExcluded, voice, suggest, improve, … }.
 function normalizeTargets(data) {
   const inbox = data && data.inbox && UUID.test(data.inbox.id) ? { id: data.inbox.id, name: text(data.inbox.name, 80) } : null;
   const seen = new Set();
@@ -35,12 +35,15 @@ function normalizeTargets(data) {
     if (targets.length >= MAX_TARGETS) break;
   }
   const suggest = data?.suggest && typeof data.suggest === "object" ? { server: data.suggest.server === true, device: data.suggest.device === true, prefer: data.suggest.prefer === "device" ? "device" : "server" } : null;
+  // "Text verbessern" (#172): the instance's AI and/or the Mac's model.
+  const improve = data?.improve && typeof data.improve === "object" ? { server: data.improve.server === true, device: data.improve.device === true } : null;
   return {
     inbox,
     targets,
     encryptedExcluded: Number.isInteger(data?.encryptedExcluded) && data.encryptedExcluded > 0 ? data.encryptedExcluded : 0,
     voice: data?.voice === true,
     suggest: suggest && (suggest.server || suggest.device) ? suggest : null,
+    improve: improve && (improve.server || improve.device) ? improve : null,
     maxFiles: Number.isInteger(data?.maxFiles) ? Math.min(data.maxFiles, 10) : 10,
     maxUploadMb: Number.isFinite(data?.maxUploadMb) ? data.maxUploadMb : 50,
   };

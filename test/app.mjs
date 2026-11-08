@@ -271,6 +271,63 @@ const chipTexts = (capture) => capture.evaluate(() => [...document.querySelector
   assert.match(texts[0], /^Fällig: Tue, Oct 27, 0?3:00\sPM×$/, "the due date in the window's language");
   assert.deepEqual(texts.slice(1), ["Tags: Kunde×", "Zuständig: Anna Schmidt×", "Priorität: Hoch×"]);
   await capture.screenshot({ path: join(shots, "capture-chips.png") });
+  // "Text verbessern" (#172): right after "Suggest", a preview with what
+  // would be lost; "Use" focused; Esc and "Keep original" keep the text,
+  // typing again drops the preview; nothing is saved by it.
+  const typed = "Angebot schreiben morgen 15 Uhr #kunde @anna !hoch";
+  assert.equal(await capture.evaluate(() => document.getElementById("suggest").nextElementSibling.id), "improve");
+  assert.equal(await capture.isVisible("#improve"), true);
+  assert.equal((await capture.textContent("#improve")).trim(), "Improve text", "the label (with the sparkle icon)");
+  assert.equal(await capture.evaluate(() => !!document.querySelector("#improve svg[aria-hidden=true]")), true);
+  await capture.click("#improve");
+  await capture.waitForSelector("#improved:not([hidden])");
+  assert.equal(await capture.textContent("#improved-text"), "Angebot schreiben morgen 15 Uhr #kunde Anna !hoch");
+  assert.equal(await capture.textContent("#improved-lost"), "This would lose: @anna");
+  assert.match(await capture.textContent("#improved-head"), /^Improve text \(from the instance's AI\)/);
+  assert.equal(await capture.evaluate(() => document.activeElement.id), "improved-use", "Use is focused");
+  const asked = JSON.parse(instance.to("/api/ai/capture/improve").at(-1).body);
+  assert.equal(asked.pageId, INBOX, "the target's page");
+  assert.equal(asked.text, typed);
+  assert.equal(asked.locale, "en");
+  await capture.screenshot({ path: join(shots, "capture-improve.png") });
+  await capture.keyboard.press("Escape");
+  await capture.waitForSelector("#improved", { state: "hidden" });
+  assert.equal(await captureVisible(), true, "Esc in the preview keeps the window");
+  assert.equal(await capture.evaluate(() => document.activeElement.id), "text");
+  assert.equal(await capture.inputValue("#text"), typed, "the original kept");
+  // Typing again drops it.
+  await capture.click("#improve");
+  await capture.waitForSelector("#improved:not([hidden])");
+  await capture.type("#text", " x");
+  assert.equal(await capture.isHidden("#improved"), true, "typing drops the preview");
+  await capture.fill("#text", typed);
+  // "Keep original".
+  await capture.click("#improve");
+  await capture.waitForSelector("#improved:not([hidden])");
+  await capture.click("#improved-keep");
+  assert.equal(await capture.isHidden("#improved"), true);
+  assert.equal(await capture.inputValue("#text"), typed);
+  // Offline: no button, no preview; back online: the button again.
+  await capture.click("#improve");
+  await capture.waitForSelector("#improved:not([hidden])");
+  const cdp = await capture.context().newCDPSession(capture);
+  const network = (offline) => cdp.send("Network.emulateNetworkConditions", { offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+  await network(true);
+  await capture.waitForSelector("#improve", { state: "hidden" });
+  assert.equal(await capture.isHidden("#improved"), true, "going offline drops the preview");
+  await network(false);
+  await capture.waitForSelector("#improve:not([hidden])");
+  await cdp.detach();
+  // Enter on "Use" takes the text – into the field, not saved.
+  await capture.click("#improve");
+  await capture.waitForSelector("#improved:not([hidden])");
+  await capture.keyboard.press("Enter");
+  assert.equal(await capture.inputValue("#text"), "Angebot schreiben morgen 15 Uhr #kunde Anna !hoch");
+  assert.equal(await capture.isHidden("#improved"), true);
+  assert.equal(await capture.evaluate(() => document.activeElement.id), "text");
+  assert.equal(instance.to("/api/capture/save").length, 0, "nothing saved by it");
+  await capture.fill("#text", typed);
+  await until(async () => (await chipTexts(capture)).length === 4, "four chips again");
   await capture.click('#chips li[data-id^="date:"] .chip-remove');
   await until(async () => (await chipTexts(capture)).length === 3, "the date chip removed");
   // Tab opens the picker; typing filters; Enter chooses.

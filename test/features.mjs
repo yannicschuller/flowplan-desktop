@@ -408,6 +408,10 @@ const server = "https://flowplan.example.com";
   assert.equal(list.encryptedExcluded, 3);
   assert.deepEqual(list.suggest, { server: false, device: true, prefer: "device" });
   assert.equal(targetRules.normalizeTargets({ suggest: { server: false, device: false } }).suggest, null, "AI off: no suggestion");
+  // "Text verbessern" (#172): only where the instance offers it.
+  assert.deepEqual(targetRules.normalizeTargets({ improve: { server: true, device: "yes" } }).improve, { server: true, device: false });
+  assert.equal(targetRules.normalizeTargets({ improve: { server: false, device: false } }).improve, null, "AI off: no button");
+  assert.equal(targetRules.normalizeTargets({}).improve, null, "an older instance: no button");
   let recent = targetRules.rememberTarget({}, "a1", JOURNAL);
   recent = targetRules.rememberTarget(recent, "a1", PROJECTS);
   recent = targetRules.rememberTarget(recent, "a1", JOURNAL);
@@ -690,6 +694,19 @@ const server = "https://flowplan.example.com";
   assert.deepEqual(await client.transcribe(INBOX, { name: "a.webm", type: "audio/webm", bytes: Buffer.alloc(10) }), { text: "Diktierter Gedanke" });
   await assert.rejects(client.transcribe("../x", { name: "a", type: "audio/webm", bytes: Buffer.alloc(1) }), (e) => e.kind === "no-inbox");
   assert.equal((await client.captureSuggest({ text: "Angebot", today: "2026-10-26" })).suggestion.targetId, PROJECTS);
+  // "Text verbessern" (#172): the improved text and the shorthand it lost;
+  // the prompt for the Mac's model, and its answer checked the same way.
+  assert.deepEqual(targets.improve, { server: true, device: false });
+  const asked = { pageId: INBOX, text: "angebot morgen #kunde @anna", today: "2026-10-26", locale: "de" };
+  assert.deepEqual(await client.captureImprove(asked), { text: "Angebot morgen #kunde Anna", lost: ["@anna"] });
+  assert.deepEqual(JSON.parse(instance.to("/api/ai/capture/improve")[0].body), asked, "pageId, text, today, locale – nothing else");
+  assert.deepEqual(await client.captureImprove({ ...asked, device: true }), { device: { prompt: "angebot morgen #kunde @anna", instructions: "Korrigiere", maxTokens: 300, temperature: 0.1 } });
+  assert.deepEqual(await client.captureImprove({ ...asked, answer: "Angebot: morgen #kunde @anna" }), { text: "Angebot: morgen #kunde @anna", lost: [] });
+  assert.equal(JSON.parse(instance.to("/api/ai/capture/improve").at(-1).body).answer, "Angebot: morgen #kunde @anna");
+  await assert.rejects(client.captureImprove({ ...asked, pageId: "../x" }), (e) => e.kind === "no-inbox", "only a page id");
+  instance.state.status["/api/ai/capture/improve"] = 403;
+  await assert.rejects(client.captureImprove(asked), (e) => e.kind === "rejected" && e.detail === "forced 403", "AI off for this page: the instance's words");
+  delete instance.state.status["/api/ai/capture/improve"];
   // 409 of a key still running: again shortly.
   instance.state.status["/api/capture/save"] = 409;
   await assert.rejects(client.captureSave(json), (e) => e.kind === "rejected" && e.status === 409);

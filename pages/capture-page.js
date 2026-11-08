@@ -4,8 +4,10 @@
 // shorthand shows as chips under the text, each removable; Mod+Shift+V
 // pastes (a link gets its title); files can be dropped, a screen region
 // taken, a voice note held to talk; an AI suggestion is offered as chips
-// to accept. After saving: "Öffnen" and "Rückgängig" for ten seconds; ↓ in
-// the empty field shows "Zuletzt erfasst".
+// to accept; "Text verbessern" shows the AI's text as a preview to take or
+// keep the original (typing again or going offline drops it). After
+// saving: "Öffnen" and "Rückgängig" for ten seconds; ↓ in the empty field
+// shows "Zuletzt erfasst".
 const { t } = window.flowplanStrings;
 const desktop = window.flowplanDesktop;
 const $ = (id) => document.getElementById(id);
@@ -21,6 +23,7 @@ const text = $("text"),
   chipsList = $("chips"),
   attachmentsList = $("attachments"),
   suggestion = $("suggestion"),
+  improved = $("improved"),
   toast = $("toast"),
   recent = $("recent"),
   recentList = $("recent-list"),
@@ -36,6 +39,7 @@ $("paste").title = t("capture.pasteTitle", mac ? "⇧⌘V" : "Ctrl+Shift+V");
 $("screen").title = t("capture.screenTitle");
 $("voice").title = t("capture.voiceTitle", mac ? "⇧⌘R" : "Ctrl+Shift+R");
 $("suggest").title = t("capture.suggestTitle");
+$("improve").title = t("capture.improveTitle");
 
 let info = { targets: [] };
 let targetId = "inbox";
@@ -450,6 +454,86 @@ $("suggest").addEventListener("click", async () => {
   }
 });
 
+// ---- "Text verbessern": a preview, nothing taken by itself ----
+// The button only while the instance offers it and there is a connection.
+let improveSeq = 0;
+let improvedText = null;
+let improvedFor = null; // the text it improves
+const online = () => navigator.onLine && !info.offline;
+function renderImproveButton() {
+  $("improve").hidden = !info.improve || !online();
+  if ($("improve").hidden) dropImprove();
+}
+function dropImprove({ focus = false } = {}) {
+  improveSeq++;
+  // A request still running: its answer is not wanted any more.
+  if ($("improve").hasAttribute("aria-busy")) say("");
+  $("improve").removeAttribute("aria-busy");
+  if (improvedText === null && improved.hidden) return;
+  improvedText = null;
+  improvedFor = null;
+  improved.hidden = true;
+  $("improved-text").textContent = "";
+  $("improved-lost").hidden = true;
+  if (focus) text.focus();
+}
+function showImproved(result, asked) {
+  improvedText = result.text;
+  improvedFor = asked;
+  $("improved-head").textContent = `${t("capture.improve")} (${t(result.source === "device" ? "capture.suggestDevice" : "capture.suggestServer")})`;
+  $("improved-text").textContent = result.text;
+  const lost = result.lost || [];
+  $("improved-lost").hidden = !lost.length;
+  $("improved-lost").textContent = lost.length ? t("capture.improveLost", lost.join(", ")) : "";
+  improved.hidden = false;
+  $("improved-use").focus();
+}
+$("improve").addEventListener("click", async () => {
+  if ($("improve").hasAttribute("aria-busy")) return;
+  if (!text.value.trim()) return say(t("capture.empty"), "error");
+  dropImprove();
+  const seq = improveSeq;
+  const asked = text.value;
+  $("improve").setAttribute("aria-busy", "true");
+  say(t("capture.improveWorking"));
+  try {
+    const result = await desktop.capture.improve({ text: asked, targetId });
+    // Typed again (or offline) meanwhile: this answer is for another text.
+    if (seq !== improveSeq || text.value !== asked) return;
+    say("");
+    if (result.text.trim() === asked.trim()) return say(t("capture.improveNothing"));
+    showImproved(result, asked);
+  } catch (e) {
+    if (seq === improveSeq) say(clean(e), "error");
+  } finally {
+    if (seq === improveSeq) $("improve").removeAttribute("aria-busy");
+  }
+});
+$("improved-use").addEventListener("click", () => {
+  const next = improvedText;
+  const fresh = improvedFor === text.value;
+  dropImprove({ focus: true });
+  // The text changed some other way (the suggestion's title): not over it.
+  if (next === null || !fresh) return;
+  text.value = next;
+  text.setSelectionRange(next.length, next.length);
+  schedulePreview();
+  text.focus();
+});
+$("improved-keep").addEventListener("click", () => dropImprove({ focus: true }));
+window.addEventListener("offline", renderImproveButton);
+// Back online: ask again whether the instance offers it (quietly, no focus change).
+window.addEventListener("online", () =>
+  desktop.capture
+    .info()
+    .then((fresh) => {
+      info.improve = fresh.improve;
+      info.offline = fresh.offline;
+      renderImproveButton();
+    })
+    .catch(() => {}),
+);
+
 // ---- Saving, the toast, undo ----
 function reset() {
   text.value = "";
@@ -464,6 +548,7 @@ function reset() {
   renderChips();
   renderAttachments();
   renderSuggestion(null);
+  dropImprove();
 }
 function showToast(message, entry) {
   lastEntry = entry;
@@ -637,6 +722,8 @@ document.addEventListener("keydown", (event) => {
   event.preventDefault();
   if (!picker.hidden) return closePicker();
   if (!recent.hidden) return closeRecent();
+  // In the preview: keep the original (the window stays).
+  if (!improved.hidden && improved.contains(document.activeElement)) return dropImprove({ focus: true });
   void desktop.capture.close();
 });
 document.getElementById("form").addEventListener("submit", (event) => {
@@ -645,6 +732,7 @@ document.getElementById("form").addEventListener("submit", (event) => {
 });
 text.addEventListener("input", () => {
   if (status.classList.contains("ok")) say("");
+  dropImprove();
   if (text.value) closeRecent();
   schedulePreview();
 });
@@ -673,6 +761,7 @@ async function refresh(preset) {
     targetId = info.targets.some((x) => x.id === keep) && keep !== "inbox" && !preset ? keep : info.target || "inbox";
     renderTarget();
     $("suggest").hidden = !info.suggest;
+    renderImproveButton();
     for (const id of ["attach", "screen", "voice"]) $(id).disabled = !!info.legacy;
     renderState(info);
     if (preset !== undefined) applyPreset(preset);

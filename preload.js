@@ -80,6 +80,7 @@ if (location.protocol === "file:")
       pickFiles: () => ipcRenderer.invoke("flowplan:capture-pick"),
       removeAttachment: (id) => ipcRenderer.invoke("flowplan:capture-remove", String(id)),
       suggest: (input) => ipcRenderer.invoke("flowplan:capture-suggest", input),
+      improve: (input) => ipcRenderer.invoke("flowplan:capture-improve", input),
       attention: () => ipcRenderer.invoke("flowplan:capture-attention"),
       discard: (id) => ipcRenderer.invoke("flowplan:capture-discard", String(id)),
       retry: () => ipcRenderer.invoke("flowplan:capture-retry"),

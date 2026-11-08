@@ -149,6 +149,30 @@ let main = await windowWith(app, () => !!document.getElementById("editor"));
   console.log("✔ Keine KI für einen anderen Ursprung");
 }
 
+// "Text verbessern" in quick capture (#172) on this Mac's model: the
+// instance builds the prompt (device: true), the helper answers, the
+// instance checks the answer – its own AI is not asked.
+{
+  instance.state.improve = { server: false, device: true };
+  await clickMenu(app, "quick-capture");
+  const capture = await windowWith(app, () => !!document.getElementById("text") && location.pathname.endsWith("capture.html"));
+  await capture.waitForSelector("#improve:not([hidden])");
+  await capture.fill("#text", "angebot morgen #kunde");
+  await capture.click("#improve");
+  await capture.waitForSelector("#improved:not([hidden])");
+  assert.equal(await capture.textContent("#improved-text"), "[Korrigiere] echo: angebot morgen #kunde", "the helper's answer");
+  assert.match(await capture.textContent("#improved-head"), /\(on this Mac\)$/);
+  assert.equal(await capture.isHidden("#improved-lost"), true, "nothing lost");
+  const asked = instance.to("/api/ai/capture/improve").map((r) => JSON.parse(r.body));
+  assert.equal(asked.length, 2);
+  assert.equal(asked[0].device, true, "first the prompt");
+  assert.equal(asked[1].answer, "[Korrigiere] echo: angebot morgen #kunde", "then the answer, checked");
+  await capture.click("#improved-keep");
+  await capture.fill("#text", "");
+  await capture.press("#text", "Escape");
+  console.log("✔ Text verbessern auf diesem Mac");
+}
+
 // The settings: the switch, the availability line; off stops the helper,
 // and pages loaded afterwards have no `ai`.
 {

@@ -15,6 +15,9 @@
 //   instance, or attached);
 // - an optional AI suggestion (the instance's AI, or Apple's model on a
 //   Mac) as chips to accept or ignore;
+// - "Text verbessern" (#172): the text corrected by the AI (the same two
+//   ways) as a preview to take or not, with the shorthand it would lose –
+//   nothing is saved until the normal save;
 // - without a connection the capture waits in an encrypted queue and is sent
 //   later, with an Idempotency-Key, so nothing arrives twice
 //   (capture-queue.js, capture-store.js);
@@ -340,6 +343,7 @@ function setupCapture(deps) {
       offline: !!entry.offline || !deps.isOnline(),
       voice: entry.list.voice,
       suggest: entry.list.suggest ? { ...entry.list.suggest, device: entry.list.suggest.device && !!deps.deviceAi?.() } : null,
+      improve: improveMode(entry.list),
       encryptedExcluded: entry.list.encryptedExcluded,
       ...stateFor(profile),
     };
@@ -487,6 +491,51 @@ function setupCapture(deps) {
         return { ...checked.suggestion, source: "server" };
       } catch (e) {
         throw new Error(e.detail || deps.t("capture.suggestFailed"));
+      }
+    });
+  }
+
+  // ---- "Text verbessern" (#172) ----
+  // The Mac's model only where this app has it; null when neither way is left.
+  function improveMode(list) {
+    const mode = list.improve;
+    if (!mode) return null;
+    const device = mode.device && !!deps.deviceAi?.();
+    return mode.server || device ? { server: mode.server, device } : null;
+  }
+  // The Mac first, as for the suggestion – unless the person chose the
+  // instance's AI first ("fallback": the suggestion's prefer says server
+  // although the Mac could). If the Mac fails, the instance's AI if allowed.
+  async function improve(input) {
+    const profile = profileOr();
+    if (!deps.isOnline()) throw new Error(messageFor({ kind: "offline" }, { t: deps.t, host: new URL(profile.server).host }));
+    const entry = await targetsFor(profile);
+    const mode = improveMode(entry.list);
+    if (!mode) throw new Error(deps.t("capture.suggestOff"));
+    const text = typeof input?.text === "string" ? input.text.slice(0, 20_000) : "";
+    if (!text.trim()) throw new Error(deps.t("capture.empty"));
+    const ordered = targetRules.orderTargets(entry.list, []);
+    const pageId = targetRules.pageOf(ordered, targetRules.isTargetId(input?.targetId) ? input.targetId : "inbox");
+    if (!pageId) throw new Error(deps.t("capture.noInbox"));
+    const body = { pageId, text, today: localDay(), locale: serverLocale(deps.locale()) };
+    const api = deps.api(profile);
+    const suggest = entry.list.suggest;
+    const serverFirst = mode.server && suggest?.device && suggest.prefer === "server";
+    const device = mode.device ? deps.deviceAi?.() : null;
+    return whileBusy(async () => {
+      if (device && !serverFirst) {
+        try {
+          const { device: prompt } = await api.captureImprove({ ...body, device: true });
+          const answer = await device.generate({ id: `improve-${randomUUID()}`, ...prompt }, { owner: "capture" });
+          return { ...(await api.captureImprove({ ...body, answer: answer.text })), source: "device" };
+        } catch (e) {
+          if (!mode.server) throw new Error(e.detail || deps.t("capture.improveFailed"));
+        }
+      }
+      try {
+        return { ...(await api.captureImprove(body)), source: "server" };
+      } catch (e) {
+        throw new Error(e.kind === "offline" ? messageFor(e, { t: deps.t, host: new URL(profile.server).host }) : e.detail || deps.t("capture.improveFailed"));
       }
     });
   }
@@ -713,6 +762,7 @@ function setupCapture(deps) {
     fromClipboard,
     linkPreview,
     suggest,
+    improve,
     undo,
     open,
     attention,

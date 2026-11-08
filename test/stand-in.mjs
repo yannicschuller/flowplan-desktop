@@ -1,7 +1,7 @@
 // A small stand-in for a Flowplan instance: just the endpoints the app asks
 // itself (health, bootstrap, capture targets, the capture command, quick
 // capture's targets, preview, save, undo, link preview, transcription and
-// AI suggestion – with Idempotency-Key like lib/idempotency.ts –, tasks,
+// AI suggestion and "Text verbessern" – with Idempotency-Key like lib/idempotency.ts –, tasks,
 // upload and the two imports, notifications) and a page with what the
 // right-click menu and the bridge need (an editor that keeps its own menu, a
 // field, links, an image). It records every request with its Origin header
@@ -199,6 +199,8 @@ export async function standIn(options = {}) {
         encryptedExcluded: 2,
         voice: true,
         suggest: { server: true, device: false, prefer: "server" },
+        // state.improve: the way(s) "Text verbessern" may run (null: off).
+        improve: "improve" in state ? state.improve : { server: true, device: false },
         maxFiles: 10,
         maxUploadMb: 50,
       });
@@ -250,6 +252,18 @@ export async function standIn(options = {}) {
     if (url.pathname === "/api/transcribe") return json(200, { text: "Diktierter Gedanke", segments: [], speakers: false });
     if (url.pathname === "/api/ai/capture/suggest")
       return json(200, { suggestion: { targetId: PROJECTS, targetName: "Projekte", title: "Angebot für Kunde schreiben", fields: [] } });
+    // "Text verbessern" (lib/ai/capture-improve.ts): the server's "AI" capitalizes
+    // the first letter and the person after @ (so "@anna" is lost); device:
+    // true → the prompt for the Mac; answer → that one checked.
+    if (url.pathname === "/api/ai/capture/improve") {
+      const input = JSON.parse(body.toString("utf8") || "{}");
+      const original = String(input.text || "");
+      const lostOf = (improved) => (original.match(/(^|\s)[#@!][^\s]+/g) || []).map((x) => x.trim()).filter((x) => !improved.split(/\s+/).includes(x));
+      if (input.answer !== undefined) return json(200, { text: String(input.answer).trim(), lost: lostOf(String(input.answer)) });
+      if (input.device) return json(200, { device: { instructions: "Korrigiere", prompt: original, maxTokens: 300, temperature: 0.1 } });
+      const improved = original.trim().replace(/^./, (c) => c.toUpperCase()).replace(/@(\w)/g, (_, c) => c.toUpperCase());
+      return json(200, { text: improved, lost: lostOf(improved) });
+    }
     if (url.pathname === "/api/command") {
       const command = JSON.parse(body.toString("utf8") || "{}");
       if (command.action !== "capture.record") return json(400, { error: "Unbekannt" });

@@ -12,6 +12,8 @@
 //   POST /api/transcribe           a voice note as text (the instance's own Whisper)
 //   POST /api/ai/capture/suggest   an AI suggestion (or the prompt for the Mac's model)
 //   POST /api/ai/capture/check     the Mac model's answer, checked by the instance
+//   POST /api/ai/capture/improve   "Text verbessern": the text improved, the shorthand
+//                                  it lost (or the prompt for the Mac's model)
 //   GET  /api/capture?workspace=…  the databases to capture into and the default
 //                                  (older instances without /api/capture/targets)
 //   POST /api/command              capture.record – quick capture of older instances
@@ -342,6 +344,32 @@ function createInstanceApi({ origin, fetch }) {
     },
     captureCheck(input) {
       return request("/api/ai/capture/check", { method: "POST", json: input });
+    },
+    // "Text verbessern" (#172): { pageId, text, today, locale } → { text, lost },
+    // the shorthand (#tag @person !priority, dates) and links the AI changed
+    // or dropped. With device: true → { device } the prompt for the Mac's
+    // model; with answer: its result, checked the same way.
+    async captureImprove(input) {
+      if (!isId(input?.pageId)) throw new ApiError("no-inbox");
+      const json = {
+        pageId: input.pageId,
+        text: String(input.text || "").slice(0, MAX_TEXT),
+        today: input.today || localDay(),
+        locale: input.locale || "de",
+        ...(input.device ? { device: true } : {}),
+        ...(typeof input.answer === "string" ? { answer: input.answer.slice(0, MAX_TEXT * 2) } : {}),
+      };
+      const data = await request("/api/ai/capture/improve", { method: "POST", json, timeout: 60_000 });
+      if (input.device && typeof input.answer !== "string") {
+        const d = data?.device;
+        if (!d || typeof d.prompt !== "string") throw new ApiError("server");
+        return { device: { prompt: d.prompt, ...(typeof d.instructions === "string" ? { instructions: d.instructions } : {}), ...(Number.isInteger(d.maxTokens) ? { maxTokens: d.maxTokens } : {}), ...(Number.isFinite(d.temperature) ? { temperature: d.temperature } : {}) } };
+      }
+      if (typeof data?.text !== "string") throw new ApiError("server");
+      // Line breaks stay (it is the capture's text); other control characters go.
+      const improved = data.text.replace(/\r\n?/g, "\n").replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "").slice(0, MAX_TEXT);
+      const lost = (Array.isArray(data.lost) ? data.lost : []).map((x) => text(x, 200)).filter(Boolean).slice(0, 50);
+      return { text: improved, lost };
     },
     async todayTasks(today = localDay()) {
       const boot = await bootstrap();

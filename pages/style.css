@@ -474,6 +474,46 @@ body.capture {
 .capture-chip.suggest {
   background: #f3e8ff;
 }
+/* "Text verbessern" (#172): the AI's text as a preview, taken or not. */
+.capture-improved {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  -webkit-app-region: no-drag;
+}
+.capture-improved strong {
+  font-weight: 600;
+  color: var(--muted);
+}
+.capture-improved-text {
+  margin: 0;
+  max-height: 120px;
+  overflow-y: auto;
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.capture-improved-lost {
+  margin: 0;
+  color: #8a6100;
+}
+.capture-improved-buttons {
+  display: flex;
+  gap: 6px;
+}
+.capture-improved-buttons button {
+  padding: 3px 10px;
+  font-size: 12px;
+}
+.capture-improved-buttons button:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
 .capture-tools {
   display: flex;
   align-items: center;
@@ -492,6 +532,15 @@ body.capture {
 }
 .tool:disabled {
   opacity: 0.45;
+}
+.tool.ai {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.tool .ai-icon {
+  flex: none;
+  color: #8b5cf6;
 }
 .tool.recording {
   color: #fff;

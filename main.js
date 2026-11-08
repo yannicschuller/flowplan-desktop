@@ -1313,6 +1313,7 @@ handle("flowplan:capture-drop", captured((paths) => capture.dropFiles(Array.isAr
 handle("flowplan:capture-pick", captured(() => capture.pickFiles()), captureWindow);
 handle("flowplan:capture-remove", captured((id) => capture.removeAttachment(String(id))), captureWindow);
 handle("flowplan:capture-suggest", captured((input) => capture.suggest(input && typeof input === "object" ? input : {})), captureWindow);
+handle("flowplan:capture-improve", captured((input) => capture.improve(input && typeof input === "object" ? input : {})), captureWindow);
 handle("flowplan:capture-attention", captured(() => capture.attention()), captureWindow);
 handle("flowplan:capture-discard", captured((id) => capture.discard(String(id))), captureWindow);
 handle("flowplan:capture-retry", captured(() => capture.retryNow()), captureWindow);
