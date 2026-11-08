@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Bug or idea in Flowplan itself
+    url: https://github.com/yannicschuller/flowplan/issues/new/choose
+    about: Problems that also happen in the browser, and ideas for the editor, databases, whiteboards and the server.
+  - name: Download
+    url: https://flowplan.org/download
+    about: The latest version for macOS, Windows and Linux.
+  - name: Security issue
+    url: https://github.com/yannicschuller/flowplan-desktop/security/advisories/new
+    about: Please report vulnerabilities privately, never in a public issue.
