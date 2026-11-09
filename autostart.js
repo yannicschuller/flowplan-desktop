@@ -13,11 +13,13 @@ const os = require("node:os");
 const HIDDEN_ARG = "--hidden";
 const FILE_NAME = "flowplan.desktop";
 
-// What setLoginItemSettings gets on macOS and Windows.
+// What setLoginItemSettings gets on macOS and Windows. macOS has no hidden
+// login item any more (Electron 45 removed openAsHidden): the app opens at
+// login and itself opens no window when the setting says so (startsHidden).
 function loginItemOptions(settings, { platform = process.platform, execPath = process.execPath } = {}) {
   const open = settings.launchAtLogin === true;
   const hidden = open && settings.startHidden === true;
-  if (platform === "darwin") return { openAtLogin: open, openAsHidden: hidden };
+  if (platform === "darwin") return { openAtLogin: open };
   if (platform === "win32") return { openAtLogin: open, path: execPath, args: hidden ? [HIDDEN_ARG] : [] };
   return null;
 }
@@ -52,9 +54,11 @@ function linuxCommand({ env = process.env, execPath = process.execPath, packaged
   if (env.APPIMAGE && path.isAbsolute(env.APPIMAGE)) return { command: env.APPIMAGE, args: [] };
   return { command: execPath, args: packaged ? [] : [appPath] };
 }
-// Whether this start was a hidden one at login.
+// Whether this start was a hidden one at login: --hidden (Windows, Linux),
+// or on macOS opened at login (app.getLoginItemSettings().wasOpenedAtLogin)
+// – main.js asks only while launch at login and start hidden are on.
 function startsHidden(argv = process.argv, loginItem = {}) {
-  return argv.includes(HIDDEN_ARG) || loginItem.wasOpenedAsHidden === true;
+  return argv.includes(HIDDEN_ARG) || loginItem.wasOpenedAtLogin === true;
 }
 
 // Applies the settings. Returns what was done, for tests and the log.

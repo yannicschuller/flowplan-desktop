@@ -212,7 +212,7 @@ const server = "https://flowplan.example.com";
 
 // Launch at login.
 {
-  assert.deepEqual(autostart.loginItemOptions({ launchAtLogin: true, startHidden: true }, { platform: "darwin" }), { openAtLogin: true, openAsHidden: true });
+  assert.deepEqual(autostart.loginItemOptions({ launchAtLogin: true, startHidden: true }, { platform: "darwin" }), { openAtLogin: true });
   assert.deepEqual(autostart.loginItemOptions({ launchAtLogin: true, startHidden: true }, { platform: "win32", execPath: "C:\\Flowplan.exe" }), { openAtLogin: true, path: "C:\\Flowplan.exe", args: ["--hidden"] });
   assert.deepEqual(autostart.loginItemOptions({ launchAtLogin: false, startHidden: true }, { platform: "win32", execPath: "x" }), { openAtLogin: false, path: "x", args: [] });
   assert.equal(autostart.autostartPath({ XDG_CONFIG_HOME: "/cfg" }, "/home/u"), "/cfg/autostart/flowplan.desktop");
@@ -224,7 +224,8 @@ const server = "https://flowplan.example.com";
   assert.deepEqual(autostart.linuxCommand({ env: { APPIMAGE: "/home/u/Flowplan.AppImage" }, execPath: "/tmp/.mount/flowplan" }), { command: "/home/u/Flowplan.AppImage", args: [] }, "the AppImage, not its mount");
   assert.deepEqual(autostart.linuxCommand({ env: {}, execPath: "/node_modules/electron/dist/electron", packaged: false, appPath: "/src/app" }), { command: "/node_modules/electron/dist/electron", args: ["/src/app"] });
   assert.equal(autostart.startsHidden(["x", "--hidden"]), true);
-  assert.equal(autostart.startsHidden(["x"], { wasOpenedAsHidden: true }), true);
+  assert.equal(autostart.startsHidden(["x"], { wasOpenedAtLogin: true }), true);
+  assert.equal(autostart.startsHidden(["x"], { wasOpenedAtLogin: false, wasOpenedAsHidden: true }), false);
   assert.equal(autostart.startsHidden(["x"], {}), false);
   console.log("✔ Beim Anmelden starten");
 }

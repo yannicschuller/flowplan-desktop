@@ -146,7 +146,7 @@ Nothing is read before the person chose; afterwards the new record or page opens
 
 ## Launch at login
 
-**Beim Anmelden öffnen** / **Open at login** in the settings, off by default, and optionally **Ohne Fenster starten** / **Start without a window** ([`autostart.js`](autostart.js)): macOS and Windows through the system's login items (`app.setLoginItemSettings`), Linux through an XDG autostart entry `~/.config/autostart/flowplan.desktop` (or under `$XDG_CONFIG_HOME`) that starts the AppImage itself (not its temporary mount). Started without a window, macOS keeps the Dock and menu bar icon, Windows and Linux the tray icon – without the tray icon the window starts minimised. Switching it off removes the login item or the file.
+**Beim Anmelden öffnen** / **Open at login** in the settings, off by default, and optionally **Ohne Fenster starten** / **Start without a window** ([`autostart.js`](autostart.js)): macOS and Windows through the system's login items (`app.setLoginItemSettings`), Linux through an XDG autostart entry `~/.config/autostart/flowplan.desktop` (or under `$XDG_CONFIG_HOME`) that starts the AppImage itself (not its temporary mount). Started without a window (on macOS the app itself opens none when the system opened it at login), macOS keeps the Dock and menu bar icon, Windows and Linux the tray icon – without the tray icon the window starts minimised. Switching it off removes the login item or the file.
 
 ## Printing and PDF
 
