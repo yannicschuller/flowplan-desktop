@@ -66,12 +66,12 @@ const server = "https://flowplan.example.com";
   assert.match(preload, /if \(!ai\) contextBridge\.exposeInMainWorld\("FlowplanDesktop", bridge\);/);
   assert.match(preload, /Object\.defineProperty\(window, "FlowplanDesktop", \{ value: Object\.freeze\(\{ \.\.\.parts, ai \}\), enumerable: true \}\)/);
   const instanceBridge = preload.slice(preload.indexOf("const bridge = {"));
-  const INSTANCE_CHANNELS = ["ai-availability", "ai-cancel", "ai-generate", "ai-stream", "drop-files", "history-state", "notifications-enabled", "notifications-refresh", "notifications-set-enabled", "open-window", "spelling-add-word"];
+  const INSTANCE_CHANNELS = ["ai-availability", "ai-cancel", "ai-generate", "ai-stream", "clear-cache", "drop-files", "history-state", "notifications-enabled", "notifications-refresh", "notifications-set-enabled", "open-window", "spelling-add-word"];
   // ai-present and device-key ask before the page runs; ai-chunk and history-command come from the app.
   assert.deepEqual(
     [...new Set([...instanceBridge.matchAll(/"flowplan:([a-z-]+)"/g)].map((m) => m[1]))].filter((c) => !["ai-present", "device-key", "ai-chunk", "history-command"].includes(c)).sort(),
     INSTANCE_CHANNELS,
-    "notifications, a word, a window, dropped files, back and forward, the on-device model – nothing else",
+    "notifications, a word, a window, dropped files, back and forward, the on-device model, clearing the window's cache – nothing else",
   );
   // Back and forward: two booleans in, a fixed word out – nothing else crosses.
   assert.match(readFileSync(join(root, "main.js"), "utf8"), /handle\("flowplan:history-state", \(event, back, forward\) => void \(historyStates\.set\(event\.sender, \{ back: back === true, forward: forward === true \}\)/);
@@ -88,6 +88,10 @@ const server = "https://flowplan.example.com";
   assert.match(main, /handle\("flowplan:drop-files", \(event, paths\) => void takeFiles\(fileRules\.droppedPaths\(paths\)\)/);
   assert.match(main, /handle\("flowplan:open-window", \(event, url\) => void openPageWindow\(ownerOf\(event\.sender\.session\)\?\.id, url\)/, "a window of the calling session's own profile");
   assert.match(main, /const target = profile && instancePageUrl\(url, profile\.server\);\s*if \(!target\) return null;/, "and only a page of its instance");
+  // Clearing the cache (#182): the caller's own session, HTTP and code
+  // cache only, at most once a minute – never its storage or sign-in.
+  assert.match(main, /handle\("flowplan:clear-cache", \(event\) => \(clearAllowed\(event\.sender\.session\) \? webCache\.clearWebCache\(event\.sender\.session\) : false\), \{ instance: true \}\);/);
+  assert.doesNotMatch(readFileSync(join(root, "web-cache.js"), "utf8"), /clearStorageData/);
   // Spelling suggestions come from the spell checker in the page, no IPC.
   const spelling = instanceBridge.slice(instanceBridge.indexOf("check:"), instanceBridge.indexOf("addWord:"));
   assert.match(spelling, /webFrame\.isWordMisspelled\(value\)/);
@@ -193,7 +197,7 @@ const server = "https://flowplan.example.com";
   assert.doesNotMatch(notifier, /require\("node:(fs|child_process)"\)|shell\./, "no files, no shell");
   const main = readFileSync(join(root, "main.js"), "utf8");
   assert.match(main, /const target = notificationRules\.targetUrl\(url, profile\.server\);/, "a click is checked");
-  assert.match(main, /win\.loadURL\(target && sameOriginAs\(target, origin\) \? target : origin\)/, "and checked again before loading");
+  assert.match(main, /loadInstance\(win, target && sameOriginAs\(target, origin\) \? target : origin\)/, "and checked again before loading");
   // Nothing from the server is trusted unchecked.
   const feed = notifications.cleanFeed({ unread: "9", notifications: [{ id: "a", text: { toString: () => "x" }, url: ["/"], push: 1 }] });
   assert.deepEqual(feed, { unread: 0, notifications: [{ id: "a", text: "", detail: "", url: "", createdAt: null, read: false, push: false }] });

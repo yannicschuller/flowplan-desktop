@@ -741,4 +741,36 @@ const server = "https://flowplan.example.com";
   assert.equal(asked.length, 2, "one passkey, another site, none: nothing asked");
   console.log("✔ Passkeys im Fenster (Windows) oder im Browser");
 }
+// The window's browser cache (#182): cleared once after an update of the
+// app, and when the instance's page asks – HTTP and code cache only, never
+// the sign-in or the offline copy, at most once a minute per session.
+{
+  const webCache = require("../web-cache.js");
+  assert.equal(webCache.clearOnStart({}, "1.3.5"), true, "first start with it");
+  assert.equal(webCache.clearOnStart({ webCacheVersion: "1.3.4" }, "1.3.5"), true, "after an update");
+  assert.equal(webCache.clearOnStart({ webCacheVersion: "1.3.5" }, "1.3.5"), false, "the same version: kept");
+  assert.equal(webCache.clearOnStart(null, ""), false);
+  const calls = [];
+  const ses = {
+    clearCache: async () => calls.push("cache"),
+    clearCodeCaches: async (options) => calls.push(["code", options]),
+    clearStorageData: async () => calls.push("storage"),
+  };
+  assert.equal(await webCache.clearWebCache(ses), true);
+  assert.deepEqual(calls, ["cache", ["code", {}]], "storage, cookies and the offline copy stay");
+  // A failing or hanging clear never holds up the window.
+  assert.equal(await webCache.clearWebCache({ clearCache: async () => { throw new Error("busy"); } }), true);
+  assert.equal(await webCache.clearWebCache({ clearCache: () => new Promise(() => {}) }, 20), false);
+  let now = 0;
+  const allowed = webCache.createLimiter(60_000, () => now);
+  const a = {}, b = {};
+  assert.equal(allowed(a), true);
+  assert.equal(allowed(a), false, "again within a minute");
+  assert.equal(allowed(b), true, "another session");
+  now = 61_000;
+  assert.equal(allowed(a), true);
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  assert.ok(pkg.build.files.includes("web-cache.js"), "packaged");
+  console.log("✔ Browser-Zwischenspeicher nach Updates");
+}
 console.log("features: ok");

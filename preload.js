@@ -132,6 +132,20 @@ else if (instance && (location.protocol === "https:" || location.protocol === "h
       },
       addWord: (word) => ipcRenderer.invoke("flowplan:spelling-add-word", String(word || "")),
     },
+    // Before the page loads itself again past an outdated copy (#182): the
+    // window's HTTP and code cache go (web-cache.js); true when cleared.
+    // The page's own memory cache as well, or a reload in this window would
+    // still take the old files from there.
+    clearCache: () =>
+      ipcRenderer.invoke("flowplan:clear-cache").then(
+        (done) => {
+          try {
+            webFrame.clearCache();
+          } catch {}
+          return done === true;
+        },
+        () => false,
+      ),
     // A page of this instance in a window of its own.
     openWindow: (url) => void ipcRenderer.invoke("flowplan:open-window", String(url || "")).catch(() => {}),
     // Back and forward (#125): the page says whether there is a step back

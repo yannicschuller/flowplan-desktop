@@ -58,6 +58,7 @@ const autostart = require("./autostart");
 const printing = require("./print");
 const deviceAiRules = require("./device-ai-rules");
 const { createDeviceAi } = require("./device-ai");
+const webCache = require("./web-cache");
 const fs = require("node:fs");
 
 const { t } = strings;
@@ -178,13 +179,30 @@ const signIn = setupBrowserSignIn({ server, getWindow: () => win, preload, local
 const page = (name) => path.join(defaultPagesDir, name);
 // The app's own pages get the language in their address.
 const loadPage = (name, query = {}, w = win) => w.loadFile(page(name), { query: { ...query, lang: strings.locale() } });
+// After an update of this app the profiles' browser caches are cleared
+// once before an instance page loads (web-cache.js, #182).
+let webCacheReady = Promise.resolve();
+function clearWebCachesOnStart() {
+  const version = app.getVersion();
+  if (!webCache.clearOnStart(readConfig(), version)) return Promise.resolve();
+  const sessions = new Set([session.defaultSession, ...state.profiles.map((p) => sessionFor(p))]);
+  return Promise.all([...sessions].map((ses) => webCache.clearWebCache(ses))).then(() => {
+    try {
+      writeConfig({ webCacheVersion: version });
+    } catch {}
+  });
+}
+const loadInstance = (w, url) =>
+  webCacheReady.then(() => {
+    if (!w.isDestroyed()) return w.loadURL(url);
+  }).catch(() => {});
 // The instance's start page, or `target` when it is an address of the same
 // instance (a clicked notification, checked by notifications.targetUrl).
 function openServer(target) {
   const origin = server();
   if (!win) return;
   if (!origin) return loadPage("setup.html", { server: presetServer() || DEFAULT_SERVER });
-  win.loadURL(target && sameOriginAs(target, origin) ? target : origin).catch(() => {});
+  void loadInstance(win, target && sameOriginAs(target, origin) ? target : origin);
 }
 // Windows and Linux menus treat "&" as a mnemonic marker.
 const menuText = (text) => (isMac ? text : text.replace(/&/g, "&&"));
@@ -606,7 +624,7 @@ function openPageWindow(profileId, url, bounds) {
     pageWindows.delete(w);
     if (entry && !entry.keep) savePageWindows(profileId);
   });
-  w.loadURL(target).catch(() => {});
+  void loadInstance(w, target);
   savePageWindows(profileId);
   app.emit("flowplan-page-window", { profileId, url: target, window: w });
   return w;
@@ -1352,6 +1370,10 @@ handle("flowplan:notifications-set-enabled", (_event, on) => !!notifier && notif
 handle("flowplan:notifications-refresh", (event) => notifier?.refresh(ownerOf(event.sender.session)?.id), { instance: true });
 handle("flowplan:spelling-add-word", (event, word) => dictionaryWord(word) && event.sender.session.addWordToSpellCheckerDictionary(word), { instance: true });
 handle("flowplan:open-window", (event, url) => void openPageWindow(ownerOf(event.sender.session)?.id, url), { instance: true });
+// The page loads itself again past an outdated copy (#182, web-cache.js):
+// the HTTP and code cache of its own session go first – nothing else.
+const clearAllowed = webCache.createLimiter();
+handle("flowplan:clear-cache", (event) => (clearAllowed(event.sender.session) ? webCache.clearWebCache(event.sender.session) : false), { instance: true });
 handle("flowplan:drop-files", (event, paths) => void takeFiles(fileRules.droppedPaths(paths)), { instance: true });
 handle("flowplan:history-state", (event, back, forward) => void (historyStates.set(event.sender, { back: back === true, forward: forward === true }), refreshHistoryMenu()), { instance: true });
 // Apple's on-device model: whether the bridge exists (asked by the preload,
@@ -1419,6 +1441,7 @@ else {
     if (wanted) state = { ...state, activeProfile: wanted.id };
     if (state.profiles.length && (!Array.isArray(config.profiles) || wanted)) writeConfig(profiles.toConfig(state));
     prepareSession(session.defaultSession);
+    webCacheReady = clearWebCachesOnStart().catch(() => {});
     notifier = setupNotifier({
       getState: () => state,
       sessionFor,
