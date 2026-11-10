@@ -68,6 +68,12 @@
     "menu.zoomOut": ["Verkleinern", "Zoom Out", "Réduire", "缩小"],
     "menu.fullscreen": ["Vollbild", "Full Screen", "Plein écran", "全屏"],
     "menu.devTools": ["Entwicklerwerkzeuge", "Developer Tools", "Outils de développement", "开发者工具"],
+    // A page of the window that crashed or stopped answering (main.js, #182)
+    "page.gone": ["Diese Seite ist abgestürzt.", "This page crashed.", "Cette page a planté.", "此页面已崩溃。"],
+    "page.goneDetail": ["Grund: {0} (Code {1}). Lade die Seite neu. Passiert es wieder, öffne vorher Ansicht → Entwicklerwerkzeuge ({2}) und kopiere die roten Meldungen im Tab „Console“ in deinen Fehlerbericht.", "Reason: {0} (code {1}). Reload the page. If it happens again, open View → Developer Tools ({2}) first and copy the red messages in the Console tab into your bug report.", "Raison : {0} (code {1}). Rechargez la page. Si cela se reproduit, ouvrez d'abord Affichage → Outils de développement ({2}) et copiez les messages rouges de l'onglet Console dans votre rapport de bug.", "原因：{0}（代码 {1}）。请重新加载页面。如果再次发生，请先打开 视图 → 开发者工具（{2}），并将“Console”标签中的红色消息复制到你的错误报告中。"],
+    "page.hung": ["Diese Seite reagiert nicht mehr.", "This page is not responding.", "Cette page ne répond plus.", "此页面无响应。"],
+    "page.hungDetail": ["Du kannst warten oder die Seite neu laden. Für einen Fehlerbericht: Ansicht → Entwicklerwerkzeuge ({0}), Tab „Console“.", "You can wait or reload the page. For a bug report: View → Developer Tools ({0}), Console tab.", "Vous pouvez attendre ou recharger la page. Pour un rapport de bug : Affichage → Outils de développement ({0}), onglet Console.", "你可以等待或重新加载页面。如需提交错误报告：视图 → 开发者工具（{0}），“Console”标签。"],
+    "page.wait": ["Warten", "Wait", "Attendre", "等待"],
     "menu.navigation": ["Navigation", "Navigation", "Navigation", "导航"],
     "menu.back": ["Zurück", "Back", "Précédent", "后退"],
     "menu.forward": ["Vorwärts", "Forward", "Suivant", "前进"],

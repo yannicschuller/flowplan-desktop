@@ -400,6 +400,35 @@ function wireWindow(w, profileId, { primary }) {
   });
   handoff.track(w, origin);
   wireHistory(w);
+  wireCrashes(w);
+}
+// A page that crashed or stopped answering (#182): never a white window
+// without a word – the reason goes to the log and into a dialog that offers
+// to load the page again (a crashed page stays white until it is reloaded).
+const devToolsKeys = isMac ? "⌥⌘I" : "Ctrl+Shift+I";
+function wireCrashes(w) {
+  let asking = false;
+  const ask = async (options, reload) => {
+    if (asking || w.isDestroyed()) return;
+    asking = true;
+    try {
+      const { response } = await dialog.showMessageBox(w, options);
+      if (response === reload && !w.isDestroyed()) w.webContents.reload();
+    } finally {
+      asking = false;
+    }
+  };
+  w.webContents.on("render-process-gone", (_event, { reason, exitCode }) => {
+    // A page process that ended normally (the window closing).
+    if (reason === "clean-exit") return;
+    console.error(`Flowplan: page gone (${reason}, exit code ${exitCode}): ${w.webContents.getURL()}`);
+    void ask({ type: "error", message: t("page.gone"), detail: t("page.goneDetail", reason, exitCode, devToolsKeys), buttons: [t("menu.reload"), t("menu.close")], defaultId: 0, cancelId: 1, noLink: true }, 0);
+  });
+  // Chromium reports a page whose script runs for seconds without a break.
+  w.on("unresponsive", () => {
+    console.error(`Flowplan: page not responding: ${w.webContents.getURL()}`);
+    void ask({ type: "warning", message: t("page.hung"), detail: t("page.hungDetail", devToolsKeys), buttons: [t("page.wait"), t("menu.reload")], defaultId: 0, cancelId: 0, noLink: true }, 1);
+  });
 }
 // ---- Back and forward (#125) ----
 //

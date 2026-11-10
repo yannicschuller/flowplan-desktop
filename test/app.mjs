@@ -734,6 +734,40 @@ const chipTexts = (capture) => capture.evaluate(() => [...document.querySelector
   console.log("✔ Seitenfenster nach Neustart");
 }
 
+// A page that crashed or stopped answering (#182): a dialog with the reason
+// instead of a white window; "Reload" loads the page again.
+{
+  const before = await app.evaluate(() => globalThis.seen.dialogs.length);
+  await app.evaluate(() => (globalThis.answer = 0));
+  const reloaded = () =>
+    app.evaluate(({ BrowserWindow }, origin) => {
+      const w = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL() === `${origin}/`);
+      return !!w && !w.webContents.isCrashed() && !w.webContents.isLoading();
+    }, instance.origin);
+  await app.evaluate(({ BrowserWindow }, origin) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL() === `${origin}/`).webContents.forcefullyCrashRenderer(), instance.origin);
+  await until(async () => (await app.evaluate(() => globalThis.seen.dialogs.length)) > before, "the crash is reported");
+  const gone = await app.evaluate((_e, at) => globalThis.seen.dialogs[at], before);
+  assert.equal(gone.message, "This page crashed.");
+  assert.match(gone.detail, /^Reason: (crashed|killed|abnormal-exit) \(code -?\d+\)\. .*View → Developer Tools \(Ctrl\+Shift\+I\)/);
+  assert.deepEqual(gone.buttons, ["Reload", "Close"]);
+  await until(reloaded, "loaded again");
+  // Not answering: asked once, "Wait" keeps the page as it is.
+  await app.evaluate(() => (globalThis.answer = 0));
+  await app.evaluate(({ BrowserWindow }, origin) => {
+    const w = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL() === `${origin}/`);
+    w.emit("unresponsive");
+    w.emit("unresponsive");
+  }, instance.origin);
+  await until(async () => (await app.evaluate(() => globalThis.seen.dialogs.length)) === before + 2, "the hang is reported");
+  await sleep(300);
+  assert.equal(await app.evaluate(() => globalThis.seen.dialogs.length), before + 2, "once while the dialog is open");
+  const hung = await app.evaluate((_e, at) => globalThis.seen.dialogs[at], before + 1);
+  assert.equal(hung.message, "This page is not responding.");
+  assert.deepEqual(hung.buttons, ["Wait", "Reload"]);
+  await app.evaluate(() => (globalThis.answer = 2));
+  console.log("✔ Abgestürzte oder hängende Seite: Meldung und Neu laden");
+}
+
 // Without a connection after a restart: the capture waits in the queue.
 {
   await instance.stop();
