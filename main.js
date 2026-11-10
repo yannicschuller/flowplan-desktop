@@ -1196,7 +1196,10 @@ function buildMenu() {
         { role: "zoomOut", label: t("menu.zoomOut") },
         { type: "separator" },
         { role: "togglefullscreen", label: t("menu.fullscreen") },
-        { role: "toggleDevTools", label: t("menu.devTools") },
+        // The developer tools of the window in front (Electron's own panel,
+        // the app's windows only; no remote debugging port is opened). For
+        // reports of a page that breaks: the Console shows what went wrong.
+        { id: "dev-tools", role: "toggleDevTools", label: t("menu.devTools"), accelerator: isMac ? "Alt+Cmd+I" : "Ctrl+Shift+I" },
       ],
     },
     {

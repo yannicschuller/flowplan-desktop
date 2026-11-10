@@ -227,6 +227,30 @@ const hintPage = () => windowWith(app, () => location.pathname.endsWith("hint.ht
   console.log("✔ Zurück und Vorwärts: Menü, Wischen, Maustasten");
 }
 
+// Developer tools (#182): View → Developer Tools and Ctrl+Shift+I open
+// Chromium's panel for the window in front, and close it again (that the
+// app opens no remote debugging port: test/security.mjs).
+{
+  const item = await app.evaluate(({ Menu }) => {
+    const item = Menu.getApplicationMenu().getMenuItemById("dev-tools");
+    return { label: item.label, accelerator: item.accelerator, role: item.role };
+  });
+  assert.deepEqual(item, { label: "Developer Tools", accelerator: process.platform === "darwin" ? "Alt+Cmd+I" : "Ctrl+Shift+I", role: "toggledevtools" });
+  const toggle = () =>
+    app.evaluate(({ BrowserWindow, Menu }, origin) => {
+      const w = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().startsWith(origin));
+      w.focus();
+      Menu.getApplicationMenu().getMenuItemById("dev-tools").click(undefined, w, w.webContents);
+    }, instance.origin);
+  const opened = () =>
+    app.evaluate(({ BrowserWindow }, origin) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().startsWith(origin)).webContents.isDevToolsOpened(), instance.origin);
+  await toggle();
+  await until(opened, "developer tools open");
+  await toggle();
+  await until(async () => !(await opened()), "developer tools closed");
+  console.log("✔ Entwicklerwerkzeuge: Menü und Kürzel");
+}
+
 // Pages in windows of their own: Shift-click, the bridge; remembered.
 {
   await main.click("#own", { modifiers: ["Shift"] });

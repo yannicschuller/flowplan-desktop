@@ -428,6 +428,18 @@ const server = "https://flowplan.example.com";
   console.log("✔ Sprachen");
 }
 
+// Developer tools (#182): a menu item for the window in front – no remote
+// debugging port, no inspector, no switch that opens either.
+{
+  const sources = ["main.js", "page-windows.js", "sign-in.js", "print.js", "settings.js", "package.json"].map((f) => readFileSync(join(root, f), "utf8")).join("\n");
+  assert.doesNotMatch(sources, /remote-debugging|--inspect|ELECTRON_ENABLE_LOGGING/, "no debugging port or inspector");
+  assert.doesNotMatch(sources, /devTools:\s*true/, "no window opens its developer tools by itself");
+  const main = readFileSync(join(root, "main.js"), "utf8");
+  assert.match(main, /\{ id: "dev-tools", role: "toggleDevTools", label: t\("menu.devTools"\), accelerator: isMac \? "Alt\+Cmd\+I" : "Ctrl\+Shift\+I" \}/);
+  assert.doesNotMatch(main, /openDevTools\(/, "opened by the person only");
+  console.log("✔ Entwicklerwerkzeuge nur über das Menü, ohne Debug-Port");
+}
+
 // The release workflow checks for a supported Electron the same way CI does.
 {
   const ci = readFileSync(join(root, ".github", "workflows", "ci.yml"), "utf8");
