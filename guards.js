@@ -59,11 +59,15 @@ function isSignInRedirect(url, server) {
   return sameOrigin(url, server) && /\/api\/auth\//.test(url);
 }
 // Permissions for the instance: notifications, clipboard, fullscreen and the
-// microphone alone (voice notes) – never camera or screen.
+// microphone alone (voice notes, meeting notes) – never the camera. The
+// screen ("display-capture", getDisplayMedia) only for a window the page
+// armed for system audio a moment before (#199, system-audio.js) – that one
+// request, answered by main.js with the system's audio; otherwise never.
 const PLAIN_PERMISSIONS = ["notifications", "clipboard-read", "clipboard-sanitized-write", "fullscreen"];
-function permissionAllowed(permission, details, fromInstance) {
+function permissionAllowed(permission, details, fromInstance, { systemAudioArmed = false } = {}) {
   if (!fromInstance) return false;
   if (PLAIN_PERMISSIONS.includes(permission)) return true;
+  if (permission === "display-capture") return systemAudioArmed === true;
   if (permission === "media") {
     const types = details && details.mediaTypes;
     return Array.isArray(types) && types.length === 1 && types[0] === "audio";

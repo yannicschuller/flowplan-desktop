@@ -422,6 +422,9 @@
     "hint.settings": ["Einstellungen", "Settings", "Réglages", "设置"],
     "hint.close": ["Schließen", "Close", "Fermer", "关闭"],
 
+    // System audio for meeting notes (main.js, system-audio.js)
+    "systemAudio.permissionTitle": ["Systemton für Besprechungsnotizen erlauben", "Allow system audio for meeting notes", "Autoriser l'audio système pour les notes de réunion", "允许为会议记录录制系统声音"],
+    "systemAudio.permission": ["Damit Flowplan hört, was die anderen im Anruf sagen, erlaube es unter Systemeinstellungen → Datenschutz & Sicherheit → Bildschirm- & Systemaudioaufnahme und starte Flowplan neu.", "So Flowplan can hear what the others in the call say, allow it in System Settings → Privacy & Security → Screen & System Audio Recording, then restart Flowplan.", "Pour que Flowplan entende ce que disent les autres participants à l'appel, autorisez-le dans Réglages Système → Confidentialité et sécurité → Enregistrement de l'écran et de l'audio système, puis redémarrez Flowplan.", "为了让 Flowplan 听到通话中其他人的发言，请在“系统设置”→“隐私与安全性”→“录屏与系统录音”中允许，然后重新启动 Flowplan。"],
     // Screen region (screen-capture.js, pages/region.html)
     "region.title": ["Bildschirmausschnitt", "Screen region", "Zone de l'écran", "屏幕区域"],
     "region.hint": ["Bereich mit der Maus aufziehen · Enter: ganzer Bildschirm · Esc: abbrechen", "Drag a region with the mouse · Enter: whole screen · Esc: cancel", "Tracez une zone à la souris · Entrée : tout l'écran · Échap : annuler", "用鼠标拖出一个区域 · Enter：整个屏幕 · Esc：取消"],

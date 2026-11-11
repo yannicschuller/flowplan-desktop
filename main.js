@@ -30,6 +30,10 @@ const {
   Notification,
   globalShortcut,
   safeStorage,
+  desktopCapturer,
+  systemPreferences,
+  screen,
+  webContents,
 } = require("electron");
 const path = require("node:path");
 const updates = require("./updates");
@@ -59,6 +63,8 @@ const printing = require("./print");
 const deviceAiRules = require("./device-ai-rules");
 const { createDeviceAi } = require("./device-ai");
 const webCache = require("./web-cache");
+const systemAudio = require("./system-audio");
+const { permissionVerdict: screenPermissionVerdict } = require("./screen-capture");
 const fs = require("node:fs");
 
 const { t } = strings;
@@ -227,13 +233,18 @@ function prepareSession(ses) {
   preparedSessions.add(ses);
   ses.setSpellCheckerLanguages?.(settings().spellLanguages);
   // The instance gets notifications, clipboard, fullscreen and the
-  // microphone alone (voice notes) – no camera, no screen – and only the
-  // instance of the active profile that owns this session.
+  // microphone alone (voice notes, meeting notes) – no camera, no screen –
+  // and only the instance of the active profile that owns this session.
+  // The screen only for the one getDisplayMedia() of a main frame whose
+  // window armed system audio (#199, system-audio.js).
   ses.setPermissionRequestHandler((wc, permission, done, details) => {
     const owner = ownerOf(ses);
     const fromInstance = !!owner && owner.id === state.activeProfile && sameOriginAs(wc.getURL(), owner.server);
-    done(permissionAllowed(permission, details, fromInstance));
+    const systemAudioArmed =
+      permission === "display-capture" && fromInstance && details?.isMainFrame === true && isInstancePage(details?.requestingUrl, owner.server) && systemAudio.arming.isArmed(wc.id);
+    done(permissionAllowed(permission, details, fromInstance, { systemAudioArmed }));
   });
+  ses.setDisplayMediaRequestHandler((request, callback) => answerDisplayMedia(ses, request, callback));
   // Passkeys in the window (Windows, sign-in.js): when Chromium itself asks
   // which of several passkeys to use, the person picks one in a dialog – for
   // a page of the active profile's own instance only.
@@ -277,6 +288,45 @@ function prepareSession(ses) {
     if (isSignInRedirect(details.url, owner.server) || hosts.has(from.host)) hosts.add(next.host);
   });
 }
+// getDisplayMedia() (after the permission above): only an armed window's
+// main frame of its own instance is answered – a screen and the system's
+// audio (loopback), no picker – and disarmed at once; anything else is
+// refused, as without this handler.
+function answerDisplayMedia(ses, request, callback) {
+  const frame = request?.frame;
+  let contents = null;
+  try {
+    contents = frame ? webContents.fromFrame(frame) : null;
+  } catch {}
+  const owner = ownerOf(ses);
+  const armed =
+    !!contents && !frame.parent && !!owner && owner.id === state.activeProfile && isInstancePage(frame.url, owner.server) && systemAudio.arming.take(contents.id);
+  const refuse = () => {
+    app.emit("flowplan-display-media", { armed, answered: false });
+    callback(null);
+  };
+  if (!armed) return refuse();
+  const owned = BrowserWindow.fromWebContents(contents);
+  let displayId;
+  try {
+    displayId = owned ? screen.getDisplayMatching(owned.getBounds()).id : undefined;
+  } catch {}
+  desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 0, height: 0 } }).then(
+    (sources) => {
+      const answer = systemAudio.displayMediaAnswer(sources, displayId);
+      if (!answer) return refuse();
+      app.emit("flowplan-display-media", { armed, answered: true, audio: answer.audio });
+      try {
+        callback(answer);
+      } catch {
+        // The frame went away in between.
+      }
+    },
+    () => refuse(),
+  );
+}
+// System audio (#199): what this computer offers, for the bridge.
+const systemAudioCapability = () => systemAudio.currentCapability({ systemPreferences });
 function sessionFor(profile) {
   const partition = profiles.partitionFor(profile);
   return partition ? session.fromPartition(partition) : session.defaultSession;
@@ -1407,6 +1457,42 @@ handle("flowplan:open-window", (event, url) => void openPageWindow(ownerOf(event
 const clearAllowed = webCache.createLimiter();
 handle("flowplan:clear-cache", (event) => (clearAllowed(event.sender.session) ? webCache.clearWebCache(event.sender.session) : false), { instance: true });
 handle("flowplan:drop-files", (event, paths) => void takeFiles(fileRules.droppedPaths(paths)), { instance: true });
+// System audio for meeting notes (#199, system-audio.js): the instance's
+// main frame arms the next getDisplayMedia() of its own window. On a Mac
+// without the screen recording permission the page hears why, and System
+// Settings opens at that page. Arming ends with the page (a navigation, the
+// window closed).
+const armWatched = new WeakSet();
+function armSystemAudio(event) {
+  const owner = ownerOf(event.sender.session);
+  const frame = event.senderFrame;
+  if (!systemAudio.mayArm({ frameUrl: frame?.url, isMainFrame: !!frame && !frame.parent, origin: owner?.server }, isInstancePage)) return { ok: false, reason: "origin" };
+  const capability = systemAudioCapability();
+  const screenVerdict = capability.platform === "darwin" ? screenPermissionVerdict(systemPreferences.getMediaAccessStatus("screen")) : "ok";
+  const verdict = systemAudio.armVerdict(capability, { screenVerdict });
+  if (verdict.ok) {
+    const id = event.sender.id;
+    systemAudio.arming.arm(id);
+    if (!armWatched.has(event.sender)) {
+      armWatched.add(event.sender);
+      event.sender.once("destroyed", () => systemAudio.arming.clear(id));
+      event.sender.on("did-navigate", () => systemAudio.arming.clear(id));
+    }
+  } else if (verdict.reason === "permission") {
+    screenShots.openSettings("screen");
+    notify(t("systemAudio.permissionTitle"), t("systemAudio.permission"));
+  }
+  app.emit("flowplan-system-audio-arm", verdict);
+  return verdict;
+}
+handle("flowplan:system-audio-arm", (event) => armSystemAudio(event), { instance: true });
+ipcMain.on("flowplan:system-audio", (event) => {
+  let value = null;
+  try {
+    if (fromOwnInstance(event)) value = systemAudioCapability();
+  } catch {}
+  event.returnValue = value;
+});
 handle("flowplan:history-state", (event, back, forward) => void (historyStates.set(event.sender, { back: back === true, forward: forward === true }), refreshHistoryMenu()), { instance: true });
 // Apple's on-device model: whether the bridge exists (asked by the preload,
 // synchronously, before the page runs), then its calls – the instance's

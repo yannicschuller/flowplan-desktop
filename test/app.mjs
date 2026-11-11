@@ -780,6 +780,69 @@ const chipTexts = (capture) => capture.evaluate(() => [...document.querySelector
 }
 await app.close();
 
+// System audio for meeting notes (#199, system-audio.js): Linux offers none
+// and cannot arm; getDisplayMedia() stays refused unless the window was
+// armed – then the one request of its main frame is answered with a screen
+// and loopback audio, and the next one is refused again. A frame inside
+// the page cannot use the window's arming. (Real system audio cannot be
+// checked here: CI has no sound server.) Run in an app started without
+// Chromium's fake media UI, which would answer every request itself.
+async function checkSystemAudio(app, main) {
+  assert.deepEqual(await main.evaluate(() => ({ ...window.FlowplanDesktop.systemAudio })), { supported: false, platform: "linux", reason: "platform" });
+  assert.equal(await main.evaluate(() => Object.isFrozen(window.FlowplanDesktop.systemAudio)), true);
+  assert.deepEqual(await main.evaluate(() => window.FlowplanDesktop.armSystemAudio()), { ok: false, reason: "platform" });
+  await app.evaluate(({ app }) => {
+    globalThis.seen.displayMedia = [];
+    app.on("flowplan-display-media", (answer) => globalThis.seen.displayMedia.push(answer));
+  });
+  const displayMedia = (where = "main") =>
+    main.evaluate(async (where) => {
+      const target = where === "frame" ? document.getElementById("capture-frame").contentWindow : window;
+      try {
+        const stream = await target.navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+        const kinds = stream.getTracks().map((t) => t.kind).sort();
+        for (const track of stream.getTracks()) track.stop();
+        return { ok: true, kinds };
+      } catch (error) {
+        return { ok: false, name: error.name };
+      }
+    }, where);
+  const unarmed = await displayMedia();
+  assert.equal(unarmed.ok, false, "unarmed: refused as before");
+  assert.equal(unarmed.name, "NotAllowedError");
+  const arm = () =>
+    app.evaluate(({ BrowserWindow }) => {
+      const w = BrowserWindow.getAllWindows().find((x) => /localhost/.test(x.webContents.getURL()));
+      // The store main.js uses (the bridge does not arm on Linux).
+      process.mainModule.require("./system-audio").arming.arm(w.webContents.id);
+    });
+  // A frame inside the page: refused, and the window stays armed.
+  await main.evaluate(() => {
+    const frame = document.createElement("iframe");
+    frame.id = "capture-frame";
+    frame.allow = "display-capture";
+    frame.srcdoc = "<p>frame</p>";
+    document.body.append(frame);
+    return new Promise((done) => frame.addEventListener("load", done, { once: true }));
+  });
+  await arm();
+  assert.equal((await displayMedia("frame")).ok, false, "not for a frame inside the page");
+  assert.equal(await app.evaluate(() => process.mainModule.require("./system-audio").arming.size()), 1, "still armed");
+  // The armed request: answered with loopback audio, once.
+  const armed = await displayMedia();
+  const answers = await app.evaluate(() => globalThis.seen.displayMedia);
+  assert.deepEqual(answers.at(-1), { armed: true, answered: true, audio: "loopback" }, "a screen and the system's audio, no picker");
+  if (armed.ok) assert.ok(armed.kinds.includes("video"), "the page gets the screen (and stops it)");
+  else console.log(`  (the armed stream did not start here: ${armed.name} – no sound server for loopback audio)`);
+  assert.equal(await app.evaluate(() => process.mainModule.require("./system-audio").arming.size()), 0, "disarmed");
+  const again = await displayMedia();
+  assert.equal(again.ok, false, "the next request is refused again");
+  assert.equal(again.name, "NotAllowedError");
+  assert.equal((await app.evaluate(() => globalThis.seen.displayMedia)).length, answers.length, "it does not reach the handler");
+  await main.evaluate(() => document.getElementById("capture-frame").remove());
+  console.log("✔ Systemton: nur die eine vorbereitete Bildschirmfreigabe");
+}
+
 // First run: after the instance is added and signed in, the setup's last
 // step – its switches are the settings, all skippable; no hint afterwards.
 {
@@ -833,6 +896,7 @@ await app.close();
   await sleep(1000);
   assert.ok(!(await app.evaluate(({ webContents }) => webContents.getAllWebContents().some((c) => c.getURL().includes("hint.html")))), "no hint after the setup");
   assert.ok(!(await urls(app)).some((u) => u.includes("step=desktop")), "the step does not come back");
+  await checkSystemAudio(app, await windowWith(app, () => !!window.FlowplanDesktop && location.protocol === "http:"));
   await app.close();
   console.log("✔ Einrichtung: So soll Flowplan auf diesem Computer laufen");
 }

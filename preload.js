@@ -18,7 +18,10 @@
 //   sign-in form gets this computer's key for the instance (deviceKey,
 //   device-key.js), so a password sign-in lasts as long as the app's, and
 //   learns whether passkeys sign in right here (Windows) or in the browser
-//   (passkeys, sign-in.js). On a Mac with Apple Intelligence (and
+//   (passkeys, sign-in.js); meeting notes learn whether this computer can
+//   record its own audio (systemAudio) and arm the window's next
+//   getDisplayMedia() for it (armSystemAudio, #199, system-audio.js). On a
+//   Mac with Apple Intelligence (and
 //   the setting on, device-ai.js) it also has `ai`: Apple's on-device model,
 //   whose prompts and answers never leave the Mac. Nothing else: the web app
 //   runs without extra rights, and other sites (an identity provider, links)
@@ -163,6 +166,25 @@ else if (instance && (location.protocol === "https:" || location.protocol === "h
       },
     },
   };
+  // System audio for meeting notes (#199, system-audio.js): what this
+  // computer offers ({ supported, platform, needsPermission?, reason? }),
+  // and arming the window's NEXT getDisplayMedia() (about ten seconds) to be
+  // answered without a picker with the system's audio. Always resolves
+  // { ok, reason? }.
+  try {
+    const capability = ipcRenderer.sendSync("flowplan:system-audio");
+    if (capability && typeof capability.supported === "boolean") {
+      const systemAudio = { supported: capability.supported, platform: String(capability.platform || "") };
+      if (typeof capability.needsPermission === "boolean") systemAudio.needsPermission = capability.needsPermission;
+      if (typeof capability.reason === "string") systemAudio.reason = capability.reason;
+      bridge.systemAudio = Object.freeze(systemAudio);
+      bridge.armSystemAudio = () =>
+        ipcRenderer.invoke("flowplan:system-audio-arm").then(
+          (answer) => (answer && answer.ok === true ? { ok: true } : { ok: false, reason: typeof answer?.reason === "string" ? answer.reason : "error" }),
+          () => ({ ok: false, reason: "error" }),
+        );
+    }
+  } catch {}
   // This computer's key for the instance (device-key.js): only when main.js
   // has one for this profile.
   try {

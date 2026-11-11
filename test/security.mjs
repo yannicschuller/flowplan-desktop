@@ -66,12 +66,12 @@ const server = "https://flowplan.example.com";
   assert.match(preload, /if \(!ai\) contextBridge\.exposeInMainWorld\("FlowplanDesktop", bridge\);/);
   assert.match(preload, /Object\.defineProperty\(window, "FlowplanDesktop", \{ value: Object\.freeze\(\{ \.\.\.parts, ai \}\), enumerable: true \}\)/);
   const instanceBridge = preload.slice(preload.indexOf("const bridge = {"));
-  const INSTANCE_CHANNELS = ["ai-availability", "ai-cancel", "ai-generate", "ai-stream", "clear-cache", "drop-files", "history-state", "notifications-enabled", "notifications-refresh", "notifications-set-enabled", "open-window", "spelling-add-word"];
+  const INSTANCE_CHANNELS = ["ai-availability", "ai-cancel", "ai-generate", "ai-stream", "clear-cache", "drop-files", "history-state", "notifications-enabled", "notifications-refresh", "notifications-set-enabled", "open-window", "spelling-add-word", "system-audio-arm"];
   // ai-present and device-key ask before the page runs; ai-chunk and history-command come from the app.
   assert.deepEqual(
-    [...new Set([...instanceBridge.matchAll(/"flowplan:([a-z-]+)"/g)].map((m) => m[1]))].filter((c) => !["ai-present", "device-key", "ai-chunk", "history-command"].includes(c)).sort(),
+    [...new Set([...instanceBridge.matchAll(/"flowplan:([a-z-]+)"/g)].map((m) => m[1]))].filter((c) => !["ai-present", "device-key", "system-audio", "ai-chunk", "history-command"].includes(c)).sort(),
     INSTANCE_CHANNELS,
-    "notifications, a word, a window, dropped files, back and forward, the on-device model, clearing the window's cache – nothing else",
+    "notifications, a word, a window, dropped files, back and forward, the on-device model, clearing the window's cache, arming system audio – nothing else",
   );
   // Back and forward: two booleans in, a fixed word out – nothing else crosses.
   assert.match(readFileSync(join(root, "main.js"), "utf8"), /handle\("flowplan:history-state", \(event, back, forward\) => void \(historyStates\.set\(event\.sender, \{ back: back === true, forward: forward === true \}\)/);
@@ -335,10 +335,56 @@ const server = "https://flowplan.example.com";
   assert.equal(permissionAllowed("media", { mediaTypes: [] }, from), false);
   assert.equal(permissionAllowed("media", {}, from), false);
   assert.equal(permissionAllowed("display-capture", {}, from), false, "no screen");
+  assert.equal(permissionAllowed("display-capture", {}, from, { systemAudioArmed: false }), false, "no screen unless armed");
+  assert.equal(permissionAllowed("display-capture", {}, from, { systemAudioArmed: true }), true, "the one armed request for system audio (#199)");
+  assert.equal(permissionAllowed("display-capture", {}, false, { systemAudioArmed: true }), false, "never outside the instance");
+  assert.equal(permissionAllowed("media", { mediaTypes: ["video"] }, from, { systemAudioArmed: true }), false, "arming is no camera");
   assert.equal(permissionAllowed("geolocation", {}, from), false);
   assert.equal(permissionAllowed("media", { mediaTypes: ["audio"] }, false), false, "only the instance");
   assert.equal(permissionAllowed("notifications", {}, false), false);
   console.log("✔ Berechtigungen");
+}
+
+// System audio for meeting notes (#199): only the main frame of the
+// profile's own instance may arm a window; the bridge gets it in both
+// variants (with and without Apple's model); the Mac build says why it
+// records audio.
+{
+  const systemAudio = require("../system-audio.js");
+  const may = (frameUrl, isMainFrame = true, origin = server) => systemAudio.mayArm({ frameUrl, isMainFrame, origin }, isInstancePage);
+  assert.equal(may(`${server}/meet/abc`), true);
+  assert.equal(may(`${server}/meet/abc`, false), false, "not from a frame inside the page");
+  assert.equal(may("https://evil.example/meet"), false, "another origin");
+  assert.equal(may("https://flowplan.example.com.evil.example/"), false);
+  assert.equal(may("http://flowplan.example.com/"), false, "http of the same host");
+  assert.equal(may(page("settings.html")), false, "not the app's own pages");
+  assert.equal(may(`${server}/`, true, null), false, "a session without a profile");
+  assert.equal(may(undefined), false, "a frame that is gone");
+  const preload = readFileSync(join(root, "preload.js"), "utf8");
+  const armAt = preload.indexOf("bridge.armSystemAudio =");
+  const capAt = preload.indexOf("bridge.systemAudio =");
+  const split = preload.indexOf('if (!ai) contextBridge.exposeInMainWorld("FlowplanDesktop", bridge);');
+  assert.ok(armAt > 0 && capAt > 0 && split > armAt && split > capAt, "on the bridge before it is exposed – with and without `ai`");
+  assert.ok(preload.indexOf('ipcRenderer.sendSync("flowplan:system-audio")') > preload.indexOf("location.origin === instance"), "on the instance's pages only");
+  const main = readFileSync(join(root, "main.js"), "utf8");
+  assert.match(main, /handle\("flowplan:system-audio-arm", \(event\) => armSystemAudio\(event\), \{ instance: true \}\);/, "an instance channel");
+  assert.match(main, /ipcMain\.on\("flowplan:system-audio", \(event\) => \{\s*let value = null;\s*try \{\s*if \(fromOwnInstance\(event\)\) value = systemAudioCapability\(\);/, "the capability for the instance alone");
+  assert.match(main, /setDisplayMediaRequestHandler\(\(request, callback\) => answerDisplayMedia/);
+  assert.doesNotMatch(main, /useSystemPicker/, "no picker of the system for unarmed requests either");
+  assert.doesNotMatch(main, /appendSwitch\("enable-features"/, "Electron 45 needs no feature switch for loopback");
+  const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  const info = pkg.build.mac.extendInfo;
+  assert.match(info.NSMicrophoneUsageDescription, /meeting notes/);
+  assert.match(info.NSAudioCaptureUsageDescription, /meeting notes/, "macOS 14.2+: the CoreAudio tap needs it");
+  for (const lang of ["de", "en", "fr", "zh_CN"]) {
+    const text = readFileSync(join(root, "build", "mac-locales", `${lang}.lproj`, "InfoPlist.strings"), "utf8");
+    for (const key of ["NSMicrophoneUsageDescription", "NSAudioCaptureUsageDescription"]) assert.match(text, new RegExp(`^"${key}" = "[^"]+";$`, "m"), `${lang}: ${key}`);
+  }
+  assert.ok(pkg.build.mac.extraResources.some((r) => r.from === "build/mac-locales"), "the translations are in the app");
+  const entitlements = readFileSync(join(root, "build", "entitlements.mac.plist"), "utf8");
+  assert.match(entitlements, /<key>com\.apple\.security\.device\.audio-input<\/key>\s*<true\/>/, "the microphone under the hardened runtime");
+  assert.doesNotMatch(entitlements, /device\.camera/, "never the camera");
+  console.log("✔ Systemton nur für die eigene Instanz");
 }
 
 // E5/E8: the update source.

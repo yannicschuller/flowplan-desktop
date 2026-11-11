@@ -9,7 +9,7 @@
     <true/>
     <key>com.apple.security.cs.disable-library-validation</key>
     <true/>
-    <!-- Voice notes: the microphone (never the camera) -->
+    <!-- Voice notes and meeting notes: the microphone (never the camera) -->
     <key>com.apple.security.device.audio-input</key>
     <true/>
   </dict>

@@ -1,0 +1,3 @@
+/* Texts of the macOS permission prompts (Info.plist), English */
+"NSMicrophoneUsageDescription" = "Flowplan uses the microphone for voice notes and meeting notes.";
+"NSAudioCaptureUsageDescription" = "Flowplan records the audio of this Mac for meeting notes, so the notes include what the others in the call say.";

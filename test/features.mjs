@@ -33,6 +33,7 @@ const actionRules = require("../capture-actions.js");
 const onboarding = require("../onboarding.js");
 const screenRules = require("../screen-capture.js");
 const guards = require("../guards.js");
+const systemAudio = require("../system-audio.js");
 // sign-in.js needs Electron only once its sign-in is set up.
 const { passkeyWay, chooseWebAuthnAccount } = require("../sign-in.js");
 strings.setLocale("en");
@@ -772,5 +773,71 @@ const server = "https://flowplan.example.com";
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
   assert.ok(pkg.build.files.includes("web-cache.js"), "packaged");
   console.log("✔ Browser-Zwischenspeicher nach Updates");
+}
+// System audio for meeting notes (#199, system-audio.js): what each
+// computer offers, arming once for ten seconds, the answer to the armed
+// request.
+{
+  const cap = (platform, version, status) => {
+    const proc = { platform, getSystemVersion: () => version };
+    const os = { release: () => version };
+    const systemPreferences = { getMediaAccessStatus: (what) => (what === "screen" ? status : "granted") };
+    return systemAudio.currentCapability({ proc, os, systemPreferences });
+  };
+  assert.deepEqual(cap("win32", "10.0.19045"), { supported: true, platform: "win32" }, "Windows 10: WASAPI loopback");
+  assert.deepEqual(cap("win32", "10.0.22631"), { supported: true, platform: "win32" }, "Windows 11");
+  assert.deepEqual(cap("win32", "6.3.9600"), { supported: false, platform: "win32", reason: "os-version" }, "Windows 8.1");
+  assert.deepEqual(cap("darwin", "15.1.0", "granted"), { supported: true, platform: "darwin", needsPermission: false });
+  assert.deepEqual(cap("darwin", "14.2.1", "denied"), { supported: true, platform: "darwin", needsPermission: true });
+  assert.deepEqual(cap("darwin", "13.0.0", "not-determined"), { supported: true, platform: "darwin", needsPermission: true }, "macOS 13: ScreenCaptureKit");
+  assert.deepEqual(cap("darwin", "12.7.6", "granted"), { supported: false, platform: "darwin", reason: "os-version" }, "macOS 12 has no loopback");
+  assert.deepEqual(cap("linux", "6.8.0"), { supported: false, platform: "linux", reason: "platform" }, "Linux: not offered");
+  assert.deepEqual(cap("freebsd", "14.0"), { supported: false, platform: "freebsd", reason: "platform" });
+  // The real process of this test run (Linux in CI).
+  const here = systemAudio.currentCapability({ systemPreferences: { getMediaAccessStatus: () => "granted" } });
+  assert.equal(here.platform, process.platform);
+  // What armSystemAudio() answers.
+  assert.deepEqual(systemAudio.armVerdict(cap("win32", "10.0.19045")), { ok: true });
+  assert.deepEqual(systemAudio.armVerdict(cap("darwin", "14.5", "granted"), { screenVerdict: "ok" }), { ok: true });
+  assert.deepEqual(systemAudio.armVerdict(cap("darwin", "14.5", "not-determined"), { screenVerdict: "ok" }), { ok: true }, "the system asks itself");
+  assert.deepEqual(systemAudio.armVerdict(cap("darwin", "14.5", "denied"), { screenVerdict: "denied" }), { ok: false, reason: "permission" });
+  assert.deepEqual(systemAudio.armVerdict(cap("darwin", "12.6", "granted")), { ok: false, reason: "os-version" });
+  assert.deepEqual(systemAudio.armVerdict(cap("linux", "6.8.0")), { ok: false, reason: "platform" });
+  assert.deepEqual(systemAudio.armVerdict(null), { ok: false, reason: "platform" });
+  // Armed per window (webContents id), taken once, ten seconds.
+  let now = 1000;
+  const arming = systemAudio.createArming({ now: () => now });
+  assert.equal(systemAudio.ARM_MS, 10_000);
+  assert.equal(arming.isArmed(7), false, "unarmed");
+  assert.equal(arming.take(7), false);
+  arming.arm(7);
+  assert.equal(arming.isArmed(8), false, "another window is not armed");
+  assert.equal(arming.isArmed(7), true, "the permission request does not take it");
+  assert.equal(arming.isArmed(7), true);
+  assert.equal(arming.take(7), true, "the armed request");
+  assert.equal(arming.take(7), false, "once: the next one is not");
+  assert.equal(arming.isArmed(7), false);
+  arming.arm(7);
+  now += 9_999;
+  assert.equal(arming.isArmed(7), true, "within ten seconds");
+  now += 1;
+  assert.equal(arming.take(7), false, "expired");
+  arming.arm(9);
+  arming.clear(9);
+  assert.equal(arming.take(9), false, "a closed window");
+  arming.arm(1);
+  now += 20_000;
+  arming.arm(2);
+  assert.equal(arming.size(), 1, "expired entries go");
+  // The answer: the window's screen (or the first) with loopback audio.
+  const sources = [{ id: "screen:1:0", display_id: "1" }, { id: "screen:2:0", display_id: "2" }];
+  assert.deepEqual(systemAudio.displayMediaAnswer(sources, 2), { video: sources[1], audio: "loopback" });
+  assert.deepEqual(systemAudio.displayMediaAnswer(sources, 5), { video: sources[0], audio: "loopback" });
+  assert.deepEqual(systemAudio.displayMediaAnswer(sources), { video: sources[0], audio: "loopback" });
+  assert.equal(systemAudio.displayMediaAnswer([], 1), null, "no screen: refused");
+  assert.equal(systemAudio.displayMediaAnswer(undefined), null);
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  assert.ok(pkg.build.files.includes("system-audio.js"), "packaged");
+  console.log("✔ Systemton für Besprechungsnotizen");
 }
 console.log("features: ok");

@@ -81,6 +81,16 @@ let main = await windowWith(app, () => !!document.getElementById("editor"));
     spelling: typeof window.FlowplanDesktop.spelling.check("Flowplan").misspelled,
   }));
   assert.deepEqual(shape, { platform: "desktop", keys: ["availability", "cancel", "generate", "stream", "version"], version: 1, frozen: true, spelling: "boolean" });
+  // System audio (#199) is on this variant of the bridge too.
+  const audio = await main.evaluate(async () => ({
+    capability: { ...window.FlowplanDesktop.systemAudio },
+    frozen: Object.isFrozen(window.FlowplanDesktop.systemAudio),
+    arm: await window.FlowplanDesktop.armSystemAudio(),
+  }));
+  const expected = process.platform === "linux" ? { supported: false, platform: "linux", reason: "platform" } : audio.capability;
+  assert.deepEqual(audio.capability, expected);
+  assert.equal(audio.frozen, true);
+  if (process.platform === "linux") assert.deepEqual(audio.arm, { ok: false, reason: "platform" });
   await main.evaluate(() => {
     try {
       window.FlowplanDesktop.ai = null;
