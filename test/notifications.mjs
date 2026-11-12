@@ -221,7 +221,7 @@ const menuChecked = (app, id) => app.evaluate(({ Menu }, id) => Menu.getApplicat
   assert.match(await window.evaluate(() => window.FlowplanDesktop.version), /^\d+\.\d+\.\d+/);
   assert.equal(await window.evaluate(() => window.FlowplanDesktop.notifications.enabled()), true);
   assert.equal(await window.evaluate(() => typeof window.flowplanDesktop), "undefined");
-  assert.deepEqual(await window.evaluate(() => Object.keys(window.FlowplanDesktop).sort()), ["armSystemAudio", "clearCache", "deviceKey", "history", "notifications", "openWindow", "passkeys", "platform", "spelling", "systemAudio", "version"]);
+  assert.deepEqual(await window.evaluate(() => Object.keys(window.FlowplanDesktop).sort()), ["armMarketplaceWindow", "armSystemAudio", "clearCache", "deviceKey", "history", "marketplaceWindow", "notifications", "openWindow", "passkeys", "platform", "spelling", "systemAudio", "version"]);
   assert.equal(await window.evaluate(() => window.FlowplanDesktop.passkeys), process.platform === "win32" ? "window" : "browser", "passkeys in the browser except on Windows");
   console.log("✔ Kleine Brücke nur auf der Instanz");
 

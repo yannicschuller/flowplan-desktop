@@ -1,0 +1,10 @@
+{
+  "fixes": [
+    {
+      "de": "„Im Marketplace veröffentlichen …“ öffnet den Marketplace in einem Fenster der App und übergibt die Vorlage direkt – statt im Browser, wo die Übergabe nicht ankam (mit Flowplan 0.9.5 oder neuer). Die Anmeldung beim Marketplace bleibt erhalten.",
+      "en": "“Publish in the marketplace …” opens the marketplace in a window of the app and hands the template over directly – instead of in the browser, where the hand-over never arrived (with Flowplan 0.9.5 or newer). The marketplace sign-in is kept.",
+      "fr": "« Publier dans le marketplace … » ouvre le marketplace dans une fenêtre de l’app et transmet le modèle directement – au lieu du navigateur, où la transmission n’arrivait pas (avec Flowplan 0.9.5 ou plus récent). La connexion au marketplace est conservée.",
+      "zh": "“在市场中发布 …”会在应用的窗口中打开市场并直接移交模板，而不是在浏览器中打开（那里无法完成移交；需要 Flowplan 0.9.5 或更高版本）。市场的登录状态会保留。"
+    }
+  ]
+}

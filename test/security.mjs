@@ -67,9 +67,10 @@ const server = "https://flowplan.example.com";
   assert.match(preload, /Object\.defineProperty\(window, "FlowplanDesktop", \{ value: Object\.freeze\(\{ \.\.\.parts, ai \}\), enumerable: true \}\)/);
   const instanceBridge = preload.slice(preload.indexOf("const bridge = {"));
   const INSTANCE_CHANNELS = ["ai-availability", "ai-cancel", "ai-generate", "ai-stream", "clear-cache", "drop-files", "history-state", "notifications-enabled", "notifications-refresh", "notifications-set-enabled", "open-window", "spelling-add-word", "system-audio-arm"];
-  // ai-present and device-key ask before the page runs; ai-chunk and history-command come from the app.
+  // ai-present and device-key ask before the page runs, marketplace-arm right before window.open
+  // (all three synchronously, checked below); ai-chunk and history-command come from the app.
   assert.deepEqual(
-    [...new Set([...instanceBridge.matchAll(/"flowplan:([a-z-]+)"/g)].map((m) => m[1]))].filter((c) => !["ai-present", "device-key", "system-audio", "ai-chunk", "history-command"].includes(c)).sort(),
+    [...new Set([...instanceBridge.matchAll(/"flowplan:([a-z-]+)"/g)].map((m) => m[1]))].filter((c) => !["ai-present", "device-key", "system-audio", "marketplace-arm", "ai-chunk", "history-command"].includes(c)).sort(),
     INSTANCE_CHANNELS,
     "notifications, a word, a window, dropped files, back and forward, the on-device model, clearing the window's cache, arming system audio – nothing else",
   );
@@ -472,6 +473,83 @@ const server = "https://flowplan.example.com";
     assert.match(html, /script-src 'self'/, `${name}: CSP without inline scripts`);
   }
   console.log("✔ Sprachen");
+}
+
+// The marketplace window (marketplace-window.js): only the armed
+// window.open to the instance's marketplace gets a window of the app – no
+// preload, sandboxed, navigation on the marketplace and GitHub only;
+// everything else still goes to the system browser.
+{
+  const mp = require("../marketplace-window.js");
+  const market = "https://marketplace.flowplan.org";
+  // What the instance may arm.
+  assert.equal(mp.marketplaceOrigin(market, server), market);
+  assert.equal(mp.marketplaceOrigin("https://market.example.org/some/path", server), "https://market.example.org", "the origin alone");
+  assert.equal(mp.marketplaceOrigin("http://localhost:3402", server), "http://localhost:3402", "loopback for local tests");
+  for (const bad of ["http://marketplace.flowplan.org", "https://user:pw@marketplace.flowplan.org", "javascript:alert(1)", "file:///etc/passwd", "flowplan://open", "", "not a url", undefined, 42, `https://${"a".repeat(2000)}.example`])
+    assert.equal(mp.marketplaceOrigin(bad, server), null, String(bad).slice(0, 40));
+  assert.equal(mp.marketplaceOrigin(server, server), null, "never the instance itself");
+  // Armed once, for that origin, for a few seconds.
+  let clock = 1000;
+  const arming = mp.createArming({ now: () => clock, ttl: 10_000 });
+  assert.equal(arming.take(1, `${market}/submit?handover=1`), null, "unarmed: the browser");
+  arming.arm(1, market);
+  assert.equal(arming.take(2, `${market}/submit?handover=1`), null, "another window");
+  assert.equal(arming.take(1, `${market}/submit?handover=1#from=${encodeURIComponent(server)}`), market);
+  assert.equal(arming.take(1, `${market}/submit?handover=1`), null, "taken once");
+  arming.arm(1, market);
+  assert.equal(arming.take(1, "https://evil.example/submit?handover=1"), null, "another origin");
+  assert.equal(arming.take(1, `${market}/submit`), null, "a wrong target disarms");
+  for (const bad of [`https://marketplace.flowplan.org.evil.example/`, `http://marketplace.flowplan.org/`, `https://u:p@marketplace.flowplan.org/`, "javascript:alert(1)"]) {
+    arming.arm(1, market);
+    assert.equal(arming.take(1, bad), null, bad);
+  }
+  arming.arm(1, market);
+  clock += 10_001;
+  assert.equal(arming.take(1, `${market}/submit?handover=1`), null, "too late");
+  assert.equal(arming.arm(1, null), false, "no origin, nothing armed");
+  // Inside the marketplace window: the marketplace and GitHub's sign-in.
+  const inside = (url) => mp.allowedInMarketplaceWindow(url, market);
+  assert.equal(inside(`${market}/submit?handover=1`), true);
+  assert.equal(inside(`${market}/api/auth/github`), true);
+  assert.equal(inside("https://github.com/login/oauth/authorize?client_id=x"), true);
+  assert.equal(inside("https://github.com/sessions/two-factor"), true);
+  for (const bad of [server, `${server}/#marketplace-import`, "https://gist.github.com/", "https://github.com.evil.example/", "http://github.com/login", "https://evil.example/", "file:///etc/passwd", "javascript:alert(1)", "about:blank", undefined])
+    assert.equal(inside(bad), false, String(bad));
+  assert.equal(mp.allowedInMarketplaceWindow(`${market}/`, null), false);
+  assert.equal(mp.externalFromMarketplace("https://example.org/x"), "https://example.org/x");
+  assert.equal(mp.externalFromMarketplace("mailto:a@example.org"), "mailto:a@example.org");
+  for (const bad of ["file:///etc/passwd", "javascript:alert(1)", "flowplan://open?x", "smb://host/share"]) assert.equal(mp.externalFromMarketplace(bad), null, bad);
+  // The window itself: no preload, no bridge, sandboxed.
+  const options = mp.windowOptions({ isMac: true });
+  const prefs = options.webPreferences;
+  assert.equal("preload" in prefs, false, "no preload");
+  assert.equal("additionalArguments" in prefs, false, "no --flowplan-instance, so no bridge either");
+  assert.equal("partition" in prefs, false, "the opener's session (Chromium keeps an opener only within one)");
+  assert.equal(prefs.contextIsolation, true);
+  assert.equal(prefs.sandbox, true);
+  assert.equal(prefs.nodeIntegration, false);
+  assert.equal(prefs.nodeIntegrationInSubFrames, false);
+  assert.equal(prefs.webviewTag, false);
+  assert.equal(options.autoHideMenuBar, false, "the menu bar like the other windows on a Mac");
+  assert.equal(mp.windowOptions({ isMac: false }).autoHideMenuBar, true);
+  // The preload: the arming on the instance's bridge only; main.js answers
+  // the instance's main frame only, and allows a window only when armed.
+  const preload = readFileSync(join(root, "preload.js"), "utf8");
+  assert.ok(preload.indexOf('ipcRenderer.sendSync("flowplan:marketplace-arm"') > preload.indexOf("location.origin === instance"), "on the instance's pages only");
+  assert.ok(preload.indexOf("marketplaceWindow: true") < preload.indexOf('if (!ai) contextBridge.exposeInMainWorld("FlowplanDesktop", bridge);'), "with and without `ai`");
+  const main = readFileSync(join(root, "main.js"), "utf8");
+  assert.match(main, /ipcMain\.on\("flowplan:marketplace-arm", \(event, value\) => \{\s*let ok = false;\s*try \{\s*const owner = fromOwnInstance\(event\) \? ownerOf\(event\.sender\.session\) : null;/, "the instance's main frame alone");
+  assert.equal((main.match(/action: "allow"/g) || []).length, 1, "one window.open is ever allowed");
+  assert.match(main, /const armed = marketplaceArming\.take\(w\.webContents\.id, url\);\s*if \(armed && isInstancePage\(w\.webContents\.getURL\(\), origin\(\)\)\) \{/, "armed, from a page of the instance");
+  assert.match(main, /if \(!armed\) return void child\.destroy\(\);/, "no other child window survives");
+  const wire = main.slice(main.indexOf("function wireMarketplaceWindow("), main.indexOf("// A page that crashed or stopped answering"));
+  assert.match(wire, /contents\.setWindowOpenHandler\(\(\{ url \}\) => \{\s*outside\(url\);\s*return \{ action: "deny" \};/, "window.open from it: the browser");
+  assert.match(wire, /contents\.on\("will-navigate"/);
+  assert.match(wire, /contents\.on\("will-redirect"/, "server redirects too");
+  assert.doesNotMatch(wire, /preload|handoff|openPageWindow|instancePageUrl/, "nothing of the instance's windows");
+  assert.match(main, /if \(details\.webContents && marketplaceContents\.has\(details\.webContents\)\) return;/, "GitHub in the marketplace window is no identity provider of the instance");
+  console.log("✔ Marketplace-Fenster nur für die Übergabe");
 }
 
 // Developer tools (#182): a menu item for the window in front – no remote

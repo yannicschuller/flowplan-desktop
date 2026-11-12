@@ -18,7 +18,9 @@
 //   sign-in form gets this computer's key for the instance (deviceKey,
 //   device-key.js), so a password sign-in lasts as long as the app's, and
 //   learns whether passkeys sign in right here (Windows) or in the browser
-//   (passkeys, sign-in.js); meeting notes learn whether this computer can
+//   (passkeys, sign-in.js); "Im Marketplace veröffentlichen …" opens the
+//   marketplace in a window of the app (armMarketplaceWindow,
+//   marketplace-window.js); meeting notes learn whether this computer can
 //   record its own audio (systemAudio) and arm the window's next
 //   getDisplayMedia() for it (armSystemAudio, #199, system-audio.js). On a
 //   Mac with Apple Intelligence (and
@@ -149,6 +151,19 @@ else if (instance && (location.protocol === "https:" || location.protocol === "h
         },
         () => false,
       ),
+    // "Im Marketplace veröffentlichen …" (marketplace-window.js): the page
+    // arms its next window.open to its marketplace (an https origin) right
+    // before calling it; that one opens in a window of the app, with
+    // window.opener for the hand-over, instead of the system browser.
+    // true when armed.
+    marketplaceWindow: true,
+    armMarketplaceWindow: (origin) => {
+      try {
+        return ipcRenderer.sendSync("flowplan:marketplace-arm", String(origin || "")) === true;
+      } catch {
+        return false;
+      }
+    },
     // A page of this instance in a window of its own.
     openWindow: (url) => void ipcRenderer.invoke("flowplan:open-window", String(url || "")).catch(() => {}),
     // Back and forward (#125): the page says whether there is a step back

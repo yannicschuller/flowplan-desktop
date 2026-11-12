@@ -191,6 +191,94 @@ const hintPage = () => windowWith(app, () => location.pathname.endsWith("hint.ht
   console.log("✔ Brücke der Instanz");
 }
 
+// "Im Marketplace veröffentlichen …" (marketplace-window.js): the armed
+// window.open opens the marketplace in a window of the app, with
+// window.opener for the hand-over; no bridge there, other sites and its own
+// window.open go to the browser; unarmed, the marketplace goes to the
+// browser as before.
+{
+  const { createServer } = await import("node:http");
+  const marketPage = `<!doctype html><meta charset="utf-8"><title>submit</title>
+<script>
+addEventListener("message", (e) => {
+  if (e.source !== window.opener || e.data?.type !== "flowplan-marketplace-package") return;
+  document.title = "got " + e.data.name + " " + e.data.bytes.byteLength;
+});
+if (window.opener) window.opener.postMessage({ type: "flowplan-marketplace-ready" }, "*");
+</script>`;
+  const market = createServer((req, res) => {
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(req.url.startsWith("/submit") ? marketPage : "<!doctype html><title>other</title>");
+  });
+  await new Promise((done) => market.listen(0, "127.0.0.1", done));
+  const mp = `http://127.0.0.1:${market.address().port}`;
+  await app.evaluate(({ shell, app }) => {
+    globalThis.seen.external = [];
+    globalThis.seen.marketWindows = [];
+    globalThis.realOpenExternal = shell.openExternal;
+    shell.openExternal = async (url) => void globalThis.seen.external.push(url);
+    app.on("flowplan-marketplace-window", ({ origin }) => globalThis.seen.marketWindows.push(origin));
+  });
+  const external = () => app.evaluate(() => globalThis.seen.external);
+  const before = await windowCount(app);
+  // Unarmed: the browser, as before.
+  assert.equal(await main.evaluate((mp) => window.open(`${mp}/submit?handover=1`, "_blank") === null, mp), true);
+  await until(async () => (await external()).includes(`${mp}/submit?handover=1`), "unarmed: the browser");
+  assert.equal(await main.evaluate(() => window.FlowplanDesktop.marketplaceWindow), true);
+  assert.equal(await main.evaluate(() => window.FlowplanDesktop.armMarketplaceWindow("javascript:alert(1)")), false);
+  assert.equal(await main.evaluate((origin) => window.FlowplanDesktop.armMarketplaceWindow(origin), instance.origin), false, "never the instance");
+  // Armed for another origin: the browser.
+  assert.equal(await main.evaluate(() => window.FlowplanDesktop.armMarketplaceWindow("https://marketplace.example.org")), true);
+  assert.equal(await main.evaluate((mp) => window.open(`${mp}/submit?handover=1`, "_blank") === null, mp), true);
+  await sleep(400);
+  assert.equal(await windowCount(app), before);
+  // Armed: a window of the app, and the hand-over works.
+  const handedOver = await main.evaluate(
+    (mp) =>
+      new Promise((done) => {
+        const armed = window.FlowplanDesktop.armMarketplaceWindow(mp);
+        const win = window.open(`${mp}/submit?handover=1#from=x`, "_blank");
+        if (!win) return done({ armed, opened: false });
+        addEventListener("message", (e) => {
+          if (e.source !== win || e.origin !== mp || e.data?.type !== "flowplan-marketplace-ready") return;
+          const bytes = new Uint8Array([1, 2, 3]).buffer;
+          win.postMessage({ type: "flowplan-marketplace-package", name: "t.flowplan-template", bytes }, mp, [bytes]);
+          done({ armed, opened: true });
+        });
+        setTimeout(() => done({ armed, opened: true, ready: false }), 8000);
+      }),
+    mp,
+  );
+  assert.deepEqual(handedOver, { armed: true, opened: true });
+  const child = await windowWith(app, () => location.pathname === "/submit" && document.title.startsWith("got "));
+  assert.equal(await child.title(), "got t.flowplan-template 3");
+  assert.deepEqual(await app.evaluate(() => globalThis.seen.marketWindows), [mp]);
+  assert.equal(await windowCount(app), before + 1);
+  assert.equal(await child.evaluate(() => typeof window.FlowplanDesktop + typeof window.flowplanDesktop + typeof window.require + typeof window.process), "undefinedundefinedundefinedundefined", "no bridge, no Node");
+  assert.equal(
+    await app.evaluate(({ webContents, session }, mp) => webContents.getAllWebContents().find((c) => c.getURL().startsWith(mp)).session === session.fromPartition("persist:profile-a1"), mp),
+    true,
+    "the profile's persistent session",
+  );
+  // From the marketplace window: other sites and window.open to the browser.
+  assert.equal(await child.evaluate(() => window.open("https://example.org/a", "_blank") === null), true);
+  await until(async () => (await external()).includes("https://example.org/a"), "window.open from it: the browser");
+  await child.evaluate(() => (location.href = "https://example.org/b"));
+  await until(async () => (await external()).includes("https://example.org/b"), "another site: the browser");
+  assert.equal(new URL(child.url()).pathname, "/submit", "stayed on the marketplace");
+  await child.evaluate(() => (location.href = "/other"));
+  await until(() => child.url().endsWith("/other"), "the marketplace's own pages stay inside");
+  // Taken once: the next window.open goes to the browser again.
+  assert.equal(await main.evaluate((mp) => window.open(`${mp}/submit?handover=1`, "_blank") === null, mp), true);
+  await sleep(400);
+  assert.equal(await windowCount(app), before + 1);
+  await app.evaluate(({ BrowserWindow }, mp) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().startsWith(mp)).close(), mp);
+  await until(async () => (await windowCount(app)) === before, "closed");
+  await app.evaluate(({ shell }) => (shell.openExternal = globalThis.realOpenExternal));
+  market.close();
+  console.log("✔ Marketplace im Fenster der App, nur für die Übergabe");
+}
+
 // Back and forward (#125): the menu items follow what the page reports and
 // send their command to it, as do the trackpad's swipe (macOS) and the
 // mouse's side buttons (app-command); the page goes through its own history.

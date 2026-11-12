@@ -64,6 +64,7 @@ const deviceAiRules = require("./device-ai-rules");
 const { createDeviceAi } = require("./device-ai");
 const webCache = require("./web-cache");
 const systemAudio = require("./system-audio");
+const marketplace = require("./marketplace-window");
 const { permissionVerdict: screenPermissionVerdict } = require("./screen-capture");
 const fs = require("node:fs");
 
@@ -272,6 +273,8 @@ function prepareSession(ses) {
     });
   ses.webRequest.onBeforeRedirect((details) => {
     if (details.resourceType !== "mainFrame") return;
+    // The marketplace window's own sign-in (GitHub) is no sign-in of the instance.
+    if (details.webContents && marketplaceContents.has(details.webContents)) return;
     const owner = ownerOf(ses);
     if (!owner) return;
     let from, next;
@@ -400,6 +403,14 @@ function wireWindow(w, profileId, { primary }) {
   // in another window (Shift-, middle- or Ctrl-click, window.open) gets a
   // window of its own.
   w.webContents.setWindowOpenHandler(({ url, disposition }) => {
+    // The marketplace's submit page for the hand-over, armed by the
+    // instance's main frame a moment before (marketplace-window.js): a
+    // window of the app, with window.opener.
+    const armed = marketplaceArming.take(w.webContents.id, url);
+    if (armed && isInstancePage(w.webContents.getURL(), origin())) {
+      pendingMarketplace.set(w.webContents, armed);
+      return { action: "allow", overrideBrowserWindowOptions: marketplace.windowOptions({ isMac, dark: nativeTheme.shouldUseDarkColors, bounds: w.getBounds() }) };
+    }
     if (signIn.intercept(url)) return { action: "deny" };
     const own = instancePageUrl(url, origin());
     if (own && opensOwnWindow(disposition)) openPageWindow(profileId, own);
@@ -407,6 +418,13 @@ function wireWindow(w, profileId, { primary }) {
       void shell.openExternal(url);
     else if (sameOrigin(url)) w.loadURL(url);
     return { action: "deny" };
+  });
+  w.webContents.on("did-create-window", (child) => {
+    const armed = pendingMarketplace.get(w.webContents);
+    pendingMarketplace.delete(w.webContents);
+    // Only the armed marketplace window is ever allowed (above).
+    if (!armed) return void child.destroy();
+    wireMarketplaceWindow(child, armed);
   });
   w.webContents.on("will-navigate", (event, url) => {
     // Passkeys and SSO: sign in through the system browser (sign-in.js).
@@ -451,6 +469,35 @@ function wireWindow(w, profileId, { primary }) {
   handoff.track(w, origin);
   wireHistory(w);
   wireCrashes(w);
+}
+// The marketplace window for the hand-over (marketplace-window.js): its own
+// origin and GitHub's sign-in stay inside, everything else goes to the
+// browser; no preload, no bridge, no window of its own from it.
+const marketplaceArming = marketplace.createArming();
+const marketplaceContents = new WeakSet(); // webContents of marketplace windows
+const pendingMarketplace = new WeakMap(); // opener webContents → armed origin
+function wireMarketplaceWindow(child, mpOrigin) {
+  const contents = child.webContents;
+  marketplaceContents.add(contents);
+  const outside = (url) => {
+    const target = marketplace.externalFromMarketplace(url);
+    if (target) void shell.openExternal(target);
+  };
+  contents.setWindowOpenHandler(({ url }) => {
+    outside(url);
+    return { action: "deny" };
+  });
+  const keepInside = (event, url, isMainFrame = true) => {
+    if (!isMainFrame || marketplace.allowedInMarketplaceWindow(url, mpOrigin)) return;
+    event.preventDefault();
+    outside(url);
+  };
+  contents.on("will-navigate", (event, url) => keepInside(event, url));
+  contents.on("will-redirect", (event, url, _inPlace, isMainFrame) => keepInside(event, url, isMainFrame));
+  contents.on("will-attach-webview", (event) => event.preventDefault());
+  contextMenu.attach(child, { t, dev: !app.isPackaged, settings, setSpellLanguages, origin: () => undefined, openWindow: () => {}, openExternal: outside });
+  wireCrashes(child);
+  app.emit("flowplan-marketplace-window", { window: child, origin: mpOrigin });
 }
 // A page that crashed or stopped answering (#182): never a white window
 // without a word – the reason goes to the log and into a dialog that offers
@@ -1501,6 +1548,27 @@ handle("flowplan:history-state", (event, back, forward) => void (historyStates.s
 // main frame only, every request checked again (device-ai-rules.js).
 ipcMain.on("flowplan:ai-present", (event) => {
   event.returnValue = fromOwnInstance(event) && aiEnabled();
+});
+// "Im Marketplace veröffentlichen …" (marketplace-window.js): the instance's
+// main frame arms its window's next window.open to its marketplace –
+// synchronously, so it is armed before the page calls window.open.
+const marketplaceWatched = new WeakSet();
+ipcMain.on("flowplan:marketplace-arm", (event, value) => {
+  let ok = false;
+  try {
+    const owner = fromOwnInstance(event) ? ownerOf(event.sender.session) : null;
+    const target = owner ? marketplace.marketplaceOrigin(value, owner.server) : null;
+    if (target) {
+      const contents = event.sender;
+      ok = marketplaceArming.arm(contents.id, target);
+      if (!marketplaceWatched.has(contents)) {
+        marketplaceWatched.add(contents);
+        contents.once("destroyed", () => marketplaceArming.clear(contents.id));
+        contents.on("did-navigate", () => marketplaceArming.clear(contents.id));
+      }
+    }
+  } catch {}
+  event.returnValue = ok;
 });
 // The device key of the calling page's profile (device-key.js): asked by
 // the preload, synchronously, before the page runs – only the main frame of
