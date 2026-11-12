@@ -1,4 +1,12 @@
 {
+  "features": [
+    {
+      "de": "Ist ein Update bereit, zeigt „Was ist neu?“ die Neuerungen aller Versionen seit deiner – Breaking Changes hervorgehoben. Unter Einstellungen → Updates → „Neuigkeiten nach Updates“ wählst du Alle anzeigen, Nur Breaking Changes oder Nie.",
+      "en": "When an update is ready, “What’s new?” shows the notes of every version since yours – breaking changes highlighted. Under Settings → Updates → “What’s new after updates” you choose Show all, Only breaking changes or Never.",
+      "fr": "Quand une mise à jour est prête, « Nouveautés » affiche les nouveautés de toutes les versions depuis la vôtre – changements incompatibles mis en évidence. Dans Réglages → Mises à jour → « Nouveautés après les mises à jour », choisissez Tout afficher, Changements incompatibles uniquement ou Jamais.",
+      "zh": "更新就绪时，“新功能”会显示自你当前版本以来所有版本的更新说明，并突出显示不兼容变更。在“设置 → 更新 → 更新后的新功能”中可选择“全部显示”“仅不兼容变更”或“从不”。"
+    }
+  ],
   "fixes": [
     {
       "de": "„Im Marketplace veröffentlichen …“ öffnet den Marketplace in einem Fenster der App und übergibt die Vorlage direkt – statt im Browser, wo die Übergabe nicht ankam (mit Flowplan 0.9.5 oder neuer). Die Anmeldung beim Marketplace bleibt erhalten.",
