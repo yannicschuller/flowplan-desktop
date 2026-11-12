@@ -42,7 +42,7 @@ const server = "https://flowplan.example.com";
 
 // Settings: defaults per system, only valid values, unknown keys dropped.
 {
-  assert.deepEqual(settings.settingsOf({}, "darwin"), { tray: true, launchAtLogin: false, startHidden: false, captureShortcut: "CommandOrControl+Shift+Space", spellLanguages: ["de-DE", "en-US", "fr-FR"], deviceAi: true, captureActions: [] });
+  assert.deepEqual(settings.settingsOf({}, "darwin"), { tray: true, launchAtLogin: false, startHidden: false, captureShortcut: "CommandOrControl+Shift+Space", spellLanguages: ["de-DE", "en-US", "fr-FR"], deviceAi: true, captureActions: [], updateNotes: "all" });
   assert.equal(settings.settingsOf({}, "win32").tray, false, "off on Windows");
   assert.equal(settings.settingsOf({}, "linux").tray, false, "off on Linux");
   const saved = settings.settingsOf({ settings: { tray: "yes", launchAtLogin: true, captureShortcut: "rm -rf", spellLanguages: ["xx", "fr-FR"], partition: "persist:x" } }, "linux");
@@ -58,7 +58,7 @@ const server = "https://flowplan.example.com";
   for (const ok of ["CommandOrControl+Shift+Space", "Alt+Shift+K", "Control+Alt+F12", "Super+Plus", "Ctrl+Shift+1"]) assert.equal(settings.isShortcut(ok), true, ok);
   for (const bad of ["Space", "K", "Shift+K", "Ctrl+", "Ctrl+Ctrl+K", "Hyper+K", "Ctrl+Shift+Space+K", "", null, "Ctrl+" + "K".repeat(80)]) assert.equal(settings.isShortcut(bad), false, String(bad));
   const patched = settings.applyPatch({ settings: { launchAtLogin: true, startHidden: true } }, { launchAtLogin: false, tray: true, evil: 1 }, "linux");
-  assert.deepEqual(patched, { tray: true, launchAtLogin: false, startHidden: false, captureShortcut: settings.DEFAULT_SHORTCUT, spellLanguages: ["de-DE", "en-US", "fr-FR"], deviceAi: true, captureActions: [] }, "hidden only with launch at login");
+  assert.deepEqual(patched, { tray: true, launchAtLogin: false, startHidden: false, captureShortcut: settings.DEFAULT_SHORTCUT, spellLanguages: ["de-DE", "en-US", "fr-FR"], deviceAi: true, captureActions: [], updateNotes: "all" }, "hidden only with launch at login");
   assert.equal(settings.applyPatch({}, { captureShortcut: "Nope" }).captureShortcut, settings.DEFAULT_SHORTCUT);
   assert.equal(settings.shortcutLabel("CommandOrControl+Shift+Space", "darwin"), "⌘⇧Space");
   assert.equal(settings.shortcutLabel("CommandOrControl+Shift+Space", "win32"), "Ctrl+Shift+Space");
@@ -293,6 +293,112 @@ const server = "https://flowplan.example.com";
   assert.equal(updates.formatBytes(999), "999 B");
   assert.equal(updates.formatBytes(1_500_000, "de"), "1,5 MB");
   console.log("✔ Update-Hinweis ohne Dialog");
+}
+
+// "Was ist neu?" (#223): the release notes of the versions in between, from
+// the release feed (release-notes.js), shown as plain text in the toast.
+{
+  const notes = require("../release-notes.js");
+  const { checkNotes, curatedMarkdown, renderNotes } = await import("../scripts/release-notes.mjs");
+  // Every curated file is valid for the release workflow.
+  const dir = join(new URL("..", import.meta.url).pathname, "release-notes");
+  const files = readdirSync(dir).filter((f) => f.endsWith(".json"));
+  assert.ok(files.includes("1.3.7.json"), "1.3.7 backfilled");
+  for (const f of files) {
+    assert.match(f, /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?\.json$/, f);
+    assert.deepEqual(checkNotes(JSON.parse(readFileSync(join(dir, f), "utf8"))), [], f);
+  }
+  assert.ok(checkNotes({ fixes: [{ en: "No German" }] }).length);
+  assert.ok(checkNotes({ news: [{ de: "Neu", en: "New" }] }).length);
+  assert.ok(checkNotes({ fixes: [] }).length, "no items");
+  // The script's release body: curated sections, the commits folded away.
+  const curated = { breaking: [{ de: "Alt weg", en: "Old setting removed." }], features: [{ de: "Systemton", en: "System sound", issues: [199] }] };
+  const body = renderNotes({ version: "1.3.8", previous: "v1.3.7", commits: [{ sha: "a".repeat(40), subject: "Desktop: notes" }], curated, url: "https://github.com/x/d", issuesUrl: "https://github.com/x/s/issues" });
+  assert.match(body, /^### Breaking changes\n\n- Old setting removed\.\n\n### New\n\n- System sound \(\[#199\]\(https:\/\/github\.com\/x\/s\/issues\/199\)\)\n\n<details>\n<summary>All commits<\/summary>/);
+  assert.match(body, /<\/details>\n\n\*\*Full changelog:\*\* \[v1\.3\.7\.\.\.v1\.3\.8\]/);
+  assert.equal(curatedMarkdown({ fixes: [{ de: "x x", en: "Fixed." }] }, "u"), "### Bug fixes\n\n- Fixed.");
+
+  // What GitHub's feed gives for that body (Markdown rendered to HTML): sections, no commit list.
+  const html = (version) =>
+    `<h3>Breaking changes</h3>\n<ul>\n<li>Old setting <code>x</code> removed in ${version}</li>\n</ul>\n<h3>New</h3>\n<ul>\n<li>System sound (<a href="https://github.com/x/s/issues/199">#199</a>)</li>\n<li>A &amp; B &lt;script&gt;alert(1)&lt;/script&gt; &#8211; &#x2014; done</li>\n</ul>\n<details>\n<summary>All commits</summary>\n<ul>\n<li>Desktop: internal (<a href="#">abc</a>)</li>\n</ul>\n</details>\n<p><strong>Full changelog:</strong> <a href="#">v1...v2</a></p>`;
+  const feed = [
+    { version: "1.4.0", note: html("1.4.0") },
+    { version: "1.3.9", note: "<h3>Bug fixes</h3><ul><li>Fixed it</li></ul><script>alert(1)</script><img src=x onerror=alert(1)><style>body{}</style>" },
+    { version: "1.3.8", note: "No content." === "x" ? "" : "<p>Only a paragraph &quot;quoted&quot;</p>" },
+    { version: "1.3.7", note: "<h3>New</h3><ul><li>Already installed</li></ul>" },
+    { version: "1.5.0", note: "<h3>New</h3><ul><li>Later than the update</li></ul>" },
+    { version: "1.4.0-beta.1", note: "<h3>New</h3><ul><li>A beta</li></ul>" },
+    { version: "nonsense", note: "<h3>New</h3><ul><li>x</li></ul>" },
+    null,
+  ];
+  const list = notes.notesFromRelease(feed, { current: "1.3.7", next: "1.4.0" });
+  assert.deepEqual(list.map((r) => r.version), ["1.4.0", "1.4.0-beta.1", "1.3.9", "1.3.8"], "after the installed one up to the update, newest first (semver)");
+  assert.deepEqual(list[0].sections, [
+    { key: "breaking", title: "Breaking changes", items: ["Old setting x removed in 1.4.0"] },
+    { key: "features", title: "New", items: ["System sound (#199)", "A & B <script>alert(1)</script> – — done"] },
+  ], "folded commits and the changelog line fall away; entities become text, never markup");
+  assert.deepEqual(list[2].sections, [{ key: "fixes", title: "Bug fixes", items: ["Fixed it"] }], "scripts, styles and images fall away");
+  assert.deepEqual(list[3].sections, [{ key: "other", title: "", items: ['Only a paragraph "quoted"'] }]);
+  // A mirror's latest.yml: one text for the update, Markdown or HTML.
+  const md = notes.notesFromRelease("## What's Changed\n* Fix **sync** by @someone in [#12](https://x)\n\n### Security\n- Token kept `safe`\n\n## New Contributors\n* @someone made their first contribution\n\n**Full Changelog**: https://x", { current: "1.3.7", next: "1.3.8" });
+  assert.deepEqual(md, [{ version: "1.3.8", sections: [{ key: "other", title: "What's Changed", items: ["Fix sync by @someone in #12"] }, { key: "security", title: "Security", items: ["Token kept safe"] }] }]);
+  assert.deepEqual(notes.notesFromRelease(undefined, { current: "1.3.7", next: "1.3.8" }), []);
+  assert.deepEqual(notes.notesFromRelease("", { current: "1.3.7", next: "1.3.8" }), []);
+  const long = notes.notesFromRelease([{ version: "1.3.8", note: `<ul><li>${"x".repeat(1000)}</li>${"<li>y</li>".repeat(100)}</ul>` }], { current: "1.3.7", next: "1.3.8" });
+  assert.equal(long[0].sections[0].items[0].length, 400, "long lines are cut");
+  assert.equal(long[0].sections[0].items.length, 60, "at most 60 lines per version");
+  // The three levels.
+  assert.equal(notes.notesForLevel(list, "all"), list);
+  assert.deepEqual(notes.notesForLevel(list, "breaking"), [{ version: "1.4.0", sections: [list[0].sections[0]] }]);
+  assert.deepEqual(notes.notesForLevel(list.slice(1), "breaking"), []);
+  assert.deepEqual(notes.notesForLevel(list, "never"), []);
+  assert.equal(notes.compareVersions("1.10.0", "1.9.0") > 0, true);
+  assert.equal(notes.compareVersions("1.4.0-beta.1", "1.4.0") < 0, true);
+
+  // The toast: "Was ist neu?" next to "Restart", unfolded with the notes.
+  const view = (s, level = "all") => updates.view(s, { translate: t, locale: "en", current: "1.3.7", notesLevel: level });
+  let s = updates.reduce(updates.INITIAL, { type: "available", version: "1.4.0", canInstall: true, notes: list });
+  assert.deepEqual(view(s).actions.map((a) => a.id), ["hide"], "not while downloading");
+  s = updates.reduce(s, { type: "downloaded", version: "1.4.0" });
+  assert.deepEqual(view(s).actions.map((a) => a.id), ["notes", "restart", "later"]);
+  assert.equal(view(s).actions[0].label, "What’s new?");
+  assert.equal(view(s).detail, "Contains breaking changes – changes you need to adapt to.");
+  assert.equal(view(s).notes, undefined, "folded until asked");
+  assert.deepEqual(view(s, "never").actions.map((a) => a.id), ["restart", "later"], "never: no button");
+  assert.equal(view(s, "never").detail, "Installs when Flowplan quits – or now with a restart.");
+  const open = updates.reduce(s, { type: "notes" });
+  const shown = view(open);
+  assert.equal(shown.notesTitle, "New in Flowplan 1.4.0");
+  assert.deepEqual(shown.actions.map((a) => a.id), ["notes-close", "restart", "later"]);
+  assert.deepEqual(shown.notes.map((r) => r.version), ["1.4.0", "1.4.0-beta.1", "1.3.9", "1.3.8"]);
+  assert.deepEqual(shown.notes[0].sections.map((x) => x.title), ["Breaking changes", "New"]);
+  assert.equal(shown.notes[0].title, "Version 1.4.0");
+  assert.deepEqual(view(open, "breaking").notes.map((r) => r.version), ["1.4.0"], "only breaking changes");
+  assert.deepEqual(view(open, "breaking").notes[0].sections.map((x) => x.key), ["breaking"]);
+  strings.setLocale("de");
+  assert.deepEqual(view(open).notes[0].sections.map((x) => x.title), ["Breaking Changes", "Neu"], "section titles in the app's language");
+  assert.equal(view(open).actions[0].label, "Weniger");
+  strings.setLocale("en");
+  assert.equal(view(updates.reduce(open, { type: "notes-close" })).notes, undefined);
+  assert.equal(updates.reduce(open, { type: "dismiss" }).notesOpen, false, "Later folds them again");
+  assert.equal(updates.reduce(updates.INITIAL, { type: "notes" }), updates.INITIAL, "nothing to unfold without an update");
+  // Without breaking changes the toast keeps its text; a newer update brings its own notes.
+  const plain = updates.reduce(updates.INITIAL, { type: "downloaded", version: "1.3.9", notes: list.slice(2) });
+  assert.equal(view(plain).detail, "Installs when Flowplan quits – or now with a restart.");
+  assert.deepEqual(view(plain, "breaking").actions.map((a) => a.id), ["restart", "later"], "breaking only, none skipped: no button");
+  assert.deepEqual(updates.reduce(plain, { type: "available", version: "1.5.0", canInstall: true }).notes, [], "another version's notes are not kept");
+  // Unsigned macOS: the download page, with "Was ist neu?" too.
+  const manual = updates.reduce(updates.INITIAL, { type: "available", version: "1.4.0", canInstall: false, notes: list });
+  assert.deepEqual(view(manual).actions.map((a) => a.id), ["notes", "download", "later"]);
+  // The settings: three levels, anything else is the default.
+  assert.equal(settings.settingsOf({ settings: { updateNotes: "breaking" } }).updateNotes, "breaking");
+  assert.equal(settings.settingsOf({ settings: { updateNotes: "sometimes" } }).updateNotes, "all");
+  assert.equal(settings.applyPatch({}, { updateNotes: "never" }).updateNotes, "never");
+  assert.equal(settings.applyPatch({ settings: { updateNotes: "never" } }, { updateNotes: 3 }).updateNotes, "never");
+  // The toast page puts the notes in as text only.
+  const page = readFileSync(join(new URL("..", import.meta.url).pathname, "pages", "update-page.js"), "utf8");
+  assert.doesNotMatch(page, /innerHTML|outerHTML|insertAdjacentHTML|document\.write|DOMParser|createContextualFragment/, "no HTML from the notes");
+  console.log("✔ Was ist neu? im Update-Hinweis");
 }
 
 // The tray's menu.

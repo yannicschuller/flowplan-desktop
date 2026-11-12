@@ -75,6 +75,13 @@
         <h2 data-i18n="settings.updates">Updates</h2>
         <p class="small" id="version"></p>
         <div class="row left"><button type="button" id="check" class="secondary" data-i18n="menu.checkUpdates">Check for Updates…</button></div>
+        <h2 id="update-notes-label" class="sub" data-i18n="settings.updateNotes">What’s new after updates</h2>
+        <div class="row left" id="update-notes" role="radiogroup" aria-labelledby="update-notes-label">
+          <label class="switch"><input type="radio" name="updateNotes" value="all" /> <span data-i18n="settings.updateNotesAll">Show all</span></label>
+          <label class="switch"><input type="radio" name="updateNotes" value="breaking" /> <span data-i18n="settings.updateNotesBreaking">Only breaking changes</span></label>
+          <label class="switch"><input type="radio" name="updateNotes" value="never" /> <span data-i18n="settings.updateNotesNever">Never</span></label>
+        </div>
+        <p class="small" data-i18n="settings.updateNotesHint">Whether “What’s new?” shows what changed when the app updates.</p>
       </section>
 
       <div class="error" id="error" role="alert"></div>

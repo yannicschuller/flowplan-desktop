@@ -1,7 +1,9 @@
 // The app's own settings beyond profiles and notifications, in one place:
 // the tray / menu bar icon, launch at login, the quick capture shortcut,
 // the spell checker's languages, Apple's on-device model (deviceAi) and
-// the quick actions (more shortcuts for the capture window, capture-actions.js).
+// the quick actions (more shortcuts for the capture window, capture-actions.js)
+// and "Neuigkeiten nach Updates" (updateNotes: what "Was ist neu?" in the
+// update toast offers, updates.js).
 // They live in config.json (`settings`), are changed from the menu and from
 // pages/settings.html, and are checked here –
 // plain functions without Electron, so test/security.mjs and
@@ -12,6 +14,8 @@
 // Spell checking: German, English and French, any of them (at least one).
 const SPELL_LANGUAGES = ["de-DE", "en-US", "fr-FR"];
 const DEFAULT_SHORTCUT = "CommandOrControl+Shift+Space";
+// "Neuigkeiten nach Updates": every release's notes, only breaking changes, none.
+const UPDATE_NOTES = ["all", "breaking", "never"];
 
 // Electron accelerators: modifiers joined with "+", then one key. Only what
 // a global shortcut can use, at least one modifier (a single key would
@@ -50,6 +54,8 @@ function defaults(platform = process.platform) {
     deviceAi: true,
     // Quick actions (capture-actions.js): none until the person adds one.
     captureActions: [],
+    // "Neuigkeiten nach Updates" (#223, updates.js): all, breaking, never.
+    updateNotes: "all",
   };
 }
 
@@ -69,6 +75,8 @@ function cleanValue(key, value, base) {
     case "captureShortcut":
       if (value === null || value === false || value === "") return null;
       return isShortcut(value) ? value : base[key];
+    case "updateNotes":
+      return UPDATE_NOTES.includes(value) ? value : base[key];
     case "spellLanguages":
       return cleanLanguages(value, base[key]);
     case "captureActions":
@@ -116,4 +124,4 @@ function shortcutLabel(value, platform = process.platform) {
   return mac ? `${mods.join("")}${key}` : [...mods, key].join("+");
 }
 
-module.exports = { SPELL_LANGUAGES, DEFAULT_SHORTCUT, isShortcut, defaults, settingsOf, applyPatch, shortcutLabel };
+module.exports = { SPELL_LANGUAGES, DEFAULT_SHORTCUT, UPDATE_NOTES, isShortcut, defaults, settingsOf, applyPatch, shortcutLabel };

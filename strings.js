@@ -258,6 +258,11 @@
     "settings.shortcutTaken": ["{0} ist schon von einer anderen App belegt. Wähle eine andere Kombination.", "{0} is already used by another app. Choose another combination.", "{0} est déjà utilisé par une autre application. Choisissez une autre combinaison.", "{0} 已被其他应用占用。请选择其他组合键。"],
     "settings.spelling": ["Rechtschreibprüfung", "Spell checking", "Vérification orthographique", "拼写检查"],
     "settings.updates": ["Updates", "Updates", "Mises à jour", "更新"],
+    "settings.updateNotes": ["Neuigkeiten nach Updates", "What’s new after updates", "Nouveautés après les mises à jour", "更新后的新功能"],
+    "settings.updateNotesHint": ["Ob „Was ist neu?“ beim Update der App zeigt, was sich geändert hat. Nur Breaking Changes: nur wenn sich etwas so ändert, dass du dich darauf einstellen musst.", "Whether “What’s new?” shows what changed when the app updates. Only breaking changes: only when something changes in a way you need to adapt to.", "Si « Nouveautés » montre ce qui a changé lors de la mise à jour de l’application. Changements incompatibles uniquement : seulement lorsqu’un changement vous oblige à vous adapter.", "应用更新时，“新功能”是否显示有哪些变化。仅不兼容变更：只在有需要你适应的变化时显示。"],
+    "settings.updateNotesAll": ["Alle anzeigen", "Show all", "Tout afficher", "全部显示"],
+    "settings.updateNotesBreaking": ["Nur Breaking Changes", "Only breaking changes", "Changements incompatibles uniquement", "仅不兼容变更"],
+    "settings.updateNotesNever": ["Nie", "Never", "Jamais", "从不"],
     "settings.cancel": ["Abbrechen", "Cancel", "Annuler", "取消"],
     "settings.captureTry": ["Ausprobieren", "Try it", "Essayer", "试一试"],
     "settings.queueTitle": ["Warteschlange ohne Verbindung", "Offline queue", "File d'attente hors ligne", "离线队列"],
@@ -367,6 +372,16 @@
     "updates.onlyInstalledDetail": ["Die neueste Version gibt es unter {0}.", "The latest version is available at {0}.", "La dernière version est disponible sur {0}.", "可以在 {0} 获取最新版本。"],
     "updates.source": ["Updatequelle: {0}", "Update source: {0}", "Source des mises à jour : {0}", "更新源：{0}"],
     "updates.sourceGithub": ["GitHub-Releases von {0}", "GitHub releases of {0}", "Versions GitHub de {0}", "{0} 的 GitHub 发布版本"],
+    // "Was ist neu?" in the update toast (#223): the release notes of the versions in between.
+    "updates.whatsNew": ["Was ist neu?", "What’s new?", "Nouveautés", "新功能"],
+    "updates.notesHide": ["Weniger", "Less", "Moins", "收起"],
+    "updates.notesTitle": ["Neu in Flowplan {0}", "New in Flowplan {0}", "Nouveautés de Flowplan {0}", "Flowplan {0} 新功能"],
+    "updates.notesBreaking": ["Enthält Breaking Changes – Änderungen, auf die du dich einstellen musst.", "Contains breaking changes – changes you need to adapt to.", "Contient des changements incompatibles – des changements auxquels vous devez vous adapter.", "包含不兼容变更——需要你适应的变化。"],
+    "updates.section.breaking": ["Breaking Changes", "Breaking changes", "Changements incompatibles", "不兼容变更"],
+    "updates.section.security": ["Sicherheit", "Security", "Sécurité", "安全"],
+    "updates.section.features": ["Neu", "New", "Nouveau", "新功能"],
+    "updates.section.improvements": ["Verbessert", "Improved", "Améliorations", "改进"],
+    "updates.section.fixes": ["Fehlerbehebungen", "Bug fixes", "Corrections de bogues", "问题修复"],
     "updates.sourceIgnored": ["FLOWPLAN_UPDATE_URL wurde ignoriert, weil die Adresse nicht mit https:// beginnt: {0}", "FLOWPLAN_UPDATE_URL was ignored because the address does not start with https://: {0}", "FLOWPLAN_UPDATE_URL a été ignorée car l'adresse ne commence pas par https:// : {0}", "已忽略 FLOWPLAN_UPDATE_URL，因为该地址不是以 https:// 开头：{0}"],
 
     // Sign-in through the browser (sign-in.js, pages/sign-in.html)

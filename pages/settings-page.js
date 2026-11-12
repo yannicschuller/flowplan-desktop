@@ -1,6 +1,7 @@
 // Settings (settings.js): tray icon, launch at login, the quick capture
 // shortcut and its quick actions (capture-actions.js), the offline queue,
-// the spell checker's languages and – on a Mac build with the helper –
+// the spell checker's languages, "Neuigkeiten nach Updates" and – on a Mac
+// build with the helper –
 // Apple Intelligence (device-ai.js, optional). Every change is saved
 // at once; main.js checks it again and answers with what now holds.
 const { t } = window.flowplanStrings;
@@ -36,6 +37,8 @@ function render(data) {
   status.textContent = messages[data.shortcutStatus] || "";
   status.className = `small shortcut-status ${data.shortcutStatus}`;
   $("version").textContent = t("updates.version", data.version);
+  // "Neuigkeiten nach Updates" (#223): what "Was ist neu?" offers.
+  for (const radio of document.querySelectorAll("#update-notes input")) radio.checked = radio.value === s.updateNotes;
   // Only where the helper exists (the macOS build); the status line asks it.
   $("device-ai").hidden = !data.deviceAiSupported;
   $("deviceAi").checked = s.deviceAi;
@@ -199,6 +202,7 @@ async function change(patch) {
   }
 }
 for (const id of ["tray", "launchAtLogin", "startHidden", "deviceAi"]) $(id).addEventListener("change", (e) => change({ [id]: e.target.checked }));
+for (const radio of document.querySelectorAll("#update-notes input")) radio.addEventListener("change", () => radio.checked && change({ updateNotes: radio.value }));
 for (const box of document.querySelectorAll("#languages input"))
   box.addEventListener("change", () => change({ spellLanguages: [...document.querySelectorAll("#languages input:checked")].map((b) => b.value) }));
 

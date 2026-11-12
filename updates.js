@@ -18,10 +18,18 @@
 // check from the menu answers in the same toast. reduce() and view() decide
 // what is shown – plain functions, run by test/security.mjs and
 // test/features.mjs with Node alone.
+//
+// "Was ist neu?" (#223): a ready update (or one to download by hand) offers
+// the release notes of every version between the installed one and the new
+// one, taken from the release feed the updater reads anyway
+// (release-notes.js) and shown in the same toast, grown taller. What it
+// offers follows "Neuigkeiten nach Updates" in the settings (settings.js):
+// all, only breaking changes, never.
 const path = require("node:path");
 const fs = require("node:fs");
 const { updateFeedUrl } = require("./guards");
 const strings = require("./strings");
+const releaseNotes = require("./release-notes");
 
 const { t } = strings;
 // Electron only when needed: test/security.mjs loads this file with Node alone.
@@ -29,7 +37,7 @@ const electron = () => require("electron");
 const DOWNLOAD_PAGE = "https://flowplan.org/download";
 const RELEASES = "github.com/yannicschuller/flowplan-desktop";
 const SIX_HOURS = 6 * 60 * 60 * 1000;
-const TOAST = { width: 380, height: 132, margin: 16 };
+const TOAST = { width: 380, height: 132, notesHeight: 460, margin: 16 };
 
 function buildInfo() {
   try {
@@ -60,7 +68,10 @@ const sourceLine = () => t("updates.source", feed().label);
 // version this app cannot install itself) | up-to-date | error |
 // not-installed (`npm start`). `manual` marks a check from the menu: only
 // then are "up to date", "checking" and errors of a check shown.
-const INITIAL = { phase: "idle", version: null, manual: false, percent: 0, transferred: 0, total: 0, bytesPerSecond: 0, error: null, dismissed: false, offered: null };
+// notes: the release notes of the versions in between (release-notes.js);
+// notesOpen: "Was ist neu?" unfolded in the toast.
+const INITIAL = { phase: "idle", version: null, manual: false, percent: 0, transferred: 0, total: 0, bytesPerSecond: 0, error: null, dismissed: false, offered: null, notes: [], notesOpen: false };
+const notesOf = (event, state) => (Array.isArray(event.notes) ? event.notes : event.version && event.version !== state.version ? [] : state.notes || []);
 const number = (v) => (Number.isFinite(v) && v >= 0 ? v : 0);
 function reduce(state = INITIAL, event = {}) {
   switch (event.type) {
@@ -70,10 +81,11 @@ function reduce(state = INITIAL, event = {}) {
       // An automatic check does not hide the answer to one from the menu.
       return { ...state, phase: "checking", manual: !!event.manual || (state.phase === "checking" && state.manual), error: null, dismissed: false };
     case "available": {
-      if (event.canInstall) return { ...state, phase: "downloading", version: event.version, percent: 0, transferred: 0, total: 0, bytesPerSecond: 0, dismissed: false };
+      const notes = notesOf(event, state);
+      if (event.canInstall) return { ...state, phase: "downloading", version: event.version, percent: 0, transferred: 0, total: 0, bytesPerSecond: 0, dismissed: false, notes, notesOpen: false };
       // Pointing to the download page: once per version, unless asked.
       const again = state.offered === event.version && !state.manual;
-      return { ...state, phase: "manual-download", version: event.version, offered: event.version, dismissed: again };
+      return { ...state, phase: "manual-download", version: event.version, offered: event.version, dismissed: again, notes, notesOpen: false };
     }
     case "progress":
       return {
@@ -85,7 +97,7 @@ function reduce(state = INITIAL, event = {}) {
         bytesPerSecond: number(event.bytesPerSecond),
       };
     case "downloaded":
-      return { ...state, phase: "ready", version: event.version || state.version, percent: 100, manual: false, dismissed: false };
+      return { ...state, phase: "ready", version: event.version || state.version, percent: 100, manual: false, dismissed: false, notes: notesOf(event, state), notesOpen: false };
     case "not-available":
       return { ...state, phase: "up-to-date", dismissed: !state.manual };
     case "error":
@@ -95,7 +107,12 @@ function reduce(state = INITIAL, event = {}) {
     case "not-installed":
       return { ...state, phase: "not-installed", manual: true, dismissed: false };
     case "dismiss":
-      return { ...state, dismissed: true, manual: false };
+      return { ...state, dismissed: true, manual: false, notesOpen: false };
+    // "Was ist neu?" and "Weniger": only where the toast offers it.
+    case "notes":
+      return state.phase === "ready" || state.phase === "manual-download" ? { ...state, notesOpen: true, dismissed: false } : state;
+    case "notes-close":
+      return state.notesOpen ? { ...state, notesOpen: false } : state;
     default:
       return state;
   }
@@ -112,8 +129,23 @@ function formatBytes(bytes, locale = "en") {
   }
   return `${new Intl.NumberFormat(locale, { maximumFractionDigits: i >= 2 ? 1 : 0 }).format(n)} ${units[i]}`;
 }
+// "Was ist neu?" for a ready update: the button, a hint at breaking
+// changes, and – unfolded – the notes with their section titles in the
+// app's language (other headings as the release has them).
+function withNotes(content, state, translate, level) {
+  const notes = releaseNotes.notesForLevel(state.notes, level);
+  if (!notes.length) return content;
+  const detail = releaseNotes.hasBreaking(notes) ? translate("updates.notesBreaking") : content.detail;
+  if (!state.notesOpen) return { ...content, detail, actions: [{ id: "notes", label: translate("updates.whatsNew") }, ...content.actions] };
+  const titled = notes.map((r) => ({
+    version: r.version,
+    title: translate("updates.version", r.version),
+    sections: r.sections.map((s) => ({ key: s.key, title: s.key === "other" ? s.title : translate(`updates.section.${s.key}`), items: s.items })),
+  }));
+  return { ...content, detail, notesTitle: translate("updates.notesTitle", state.version || ""), notes: titled, actions: [{ id: "notes-close", label: translate("updates.notesHide") }, ...content.actions] };
+}
 // The toast's content, or null when nothing is to be shown.
-function view(state, { translate = t, locale = "en", current = "" } = {}) {
+function view(state, { translate = t, locale = "en", current = "", notesLevel = "all" } = {}) {
   if (state.dismissed) return null;
   const base = { phase: state.phase, version: state.version, source: translate("updates.source", feed().label) };
   switch (state.phase) {
@@ -126,9 +158,9 @@ function view(state, { translate = t, locale = "en", current = "" } = {}) {
       return { ...base, title: translate("updates.downloading", state.version || ""), detail: parts.join(" · "), progress: state.percent / 100, actions: [{ id: "hide", label: translate("updates.hide") }] };
     }
     case "ready":
-      return { ...base, title: translate("updates.ready", state.version || ""), detail: translate("updates.readyDetail"), progress: null, actions: [{ id: "restart", label: translate("updates.restartNow"), primary: true }, { id: "later", label: translate("updates.later") }] };
+      return withNotes({ ...base, title: translate("updates.ready", state.version || ""), detail: translate("updates.readyDetail"), progress: null, actions: [{ id: "restart", label: translate("updates.restartNow"), primary: true }, { id: "later", label: translate("updates.later") }] }, state, translate, notesLevel);
     case "manual-download":
-      return { ...base, title: translate("updates.available", state.version || ""), detail: translate("updates.availableDetail", current), progress: null, actions: [{ id: "download", label: translate("updates.download"), primary: true }, { id: "later", label: translate("updates.later") }] };
+      return withNotes({ ...base, title: translate("updates.available", state.version || ""), detail: translate("updates.availableDetail", current), progress: null, actions: [{ id: "download", label: translate("updates.download"), primary: true }, { id: "later", label: translate("updates.later") }] }, state, translate, notesLevel);
     case "up-to-date":
       return { ...base, title: translate("updates.upToDate"), detail: translate("updates.version", current), progress: null, autoHide: 6000, actions: [{ id: "ok", label: translate("updates.ok") }] };
     case "error":
@@ -146,7 +178,7 @@ const taskbarProgress = (state) => (state.phase === "downloading" ? Math.max(0.0
 
 let updater = null;
 let state = INITIAL;
-let deps = { getWindow: () => null, changed: () => {} };
+let deps = { getWindow: () => null, changed: () => {}, notesLevel: () => "all" };
 let toast = null; // { view, window }
 let hideTimer = null;
 let progressWindow = null;
@@ -160,12 +192,14 @@ function dispatch(event) {
 }
 function currentView() {
   const { app } = electron();
-  return view(state, { translate: t, locale: strings.locale(), current: app.getVersion() });
+  return view(state, { translate: t, locale: strings.locale(), current: app.getVersion(), notesLevel: deps.notesLevel?.() || "all" });
 }
 function layoutToast() {
   if (!toast || toast.window.isDestroyed()) return;
   const [width, height] = toast.window.getContentSize();
-  toast.view.setBounds({ x: Math.max(0, width - TOAST.width - TOAST.margin), y: Math.max(0, height - TOAST.height - TOAST.margin), width: Math.min(TOAST.width, width), height: TOAST.height });
+  // Taller while "Was ist neu?" is open, never more than the window.
+  const tall = toast.notes ? Math.min(TOAST.notesHeight, Math.max(TOAST.height, height - 2 * TOAST.margin)) : TOAST.height;
+  toast.view.setBounds({ x: Math.max(0, width - TOAST.width - TOAST.margin), y: Math.max(0, height - tall - TOAST.margin), width: Math.min(TOAST.width, width), height: tall });
 }
 function detachToast() {
   if (!toast) return;
@@ -202,6 +236,7 @@ function showToast(content) {
     });
     void view.webContents.loadFile(path.join(__dirname, "pages", "update.html"), { query: { lang: strings.locale() } });
   }
+  toast.notes = !!content.notes;
   layoutToast();
   if (toast.loaded) toast.view.webContents.send("flowplan:update-state", content);
 }
@@ -239,13 +274,17 @@ function setupUpdates(options = {}) {
   // Linux outside an AppImage (.tar.gz): electron-updater skips every check
   // there; it may check – to point to the download page – but not install.
   if (process.platform === "linux" && !process.env.APPIMAGE) updater.isUpdaterActive = () => true;
+  // The notes of every version since the installed one, from the release
+  // feed the check reads anyway (release-notes.js).
+  updater.fullChangelog = true;
   updater.autoDownload = canInstall();
   updater.autoInstallOnAppQuit = canInstall();
   updater.on("checking-for-update", () => {});
-  updater.on("update-available", (info) => dispatch({ type: "available", version: info.version, canInstall: canInstall() }));
+  const notesFor = (info) => releaseNotes.notesFromRelease(info?.releaseNotes, { current: app.getVersion(), next: info?.version });
+  updater.on("update-available", (info) => dispatch({ type: "available", version: info.version, canInstall: canInstall(), notes: notesFor(info) }));
   updater.on("download-progress", (p) => dispatch({ type: "progress", percent: p.percent, transferred: p.transferred, total: p.total, bytesPerSecond: p.bytesPerSecond }));
   updater.on("update-not-available", () => dispatch({ type: "not-available" }));
-  updater.on("update-downloaded", (info) => dispatch({ type: "downloaded", version: info.version }));
+  updater.on("update-downloaded", (info) => dispatch({ type: "downloaded", version: info.version, notes: notesFor(info) }));
   // Offline or GitHub unreachable: quietly try again later, except when asked.
   updater.on("error", (error) => dispatch({ type: "error", message: error?.message || String(error) }));
   const check = () => {
@@ -283,6 +322,7 @@ function checkForUpdatesNow() {
 function act(id) {
   const { shell } = electron();
   if (id === "restart") return restartToUpdate();
+  if (id === "notes" || id === "notes-close") return dispatch({ type: id });
   if (id === "download") void shell.openExternal(DOWNLOAD_PAGE);
   dispatch({ type: "dismiss" });
 }

@@ -745,6 +745,73 @@ body.toast {
   font-size: 12px;
   border-radius: 8px;
 }
+/* A heading inside a settings section ("Neuigkeiten nach Updates"). */
+body.settings h2.sub {
+  margin-top: 6px;
+  font-size: 13px;
+}
+/* "Was ist neu?" (#223): the release notes in the toast, grown taller
+   (updates.js); the list scrolls, title and buttons stay. */
+.toast-card.with-notes {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+.toast-card.with-notes .toast-body {
+  min-height: 0;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+}
+.toast-card.with-notes .toast-detail {
+  -webkit-line-clamp: 3;
+}
+.toast-notes {
+  min-height: 0;
+  overflow-y: auto;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  overscroll-behavior: contain;
+}
+.toast-notes[hidden] {
+  display: none;
+}
+.toast-notes h2 {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+.notes-version + .notes-version {
+  margin-top: 10px;
+}
+.notes-version h3 {
+  margin: 0 0 2px;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.notes-section h4 {
+  margin: 6px 0 2px;
+  font-size: 12px;
+}
+.notes-section ul {
+  margin: 0;
+  padding-inline-start: 18px;
+  display: grid;
+  gap: 2px;
+}
+.notes-section li {
+  overflow-wrap: anywhere;
+}
+/* Breaking changes set apart: a tinted box in the danger colour. */
+.notes-section.breaking {
+  margin: 4px 0;
+  padding: 2px 8px 6px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+.notes-section.breaking h4 {
+  color: var(--danger);
+}
+.notes-section.security h4 {
+  color: var(--blue);
+}
 
 /* The screen region overlay (region.html). */
 body.region {

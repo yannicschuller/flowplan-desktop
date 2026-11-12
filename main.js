@@ -834,6 +834,8 @@ function changeSettings(patch) {
   // Off: the helper goes at once; pages loaded from now on have no bridge.
   if (!next.deviceAi) aiInstance?.stop();
   buildMenu();
+  // "Neuigkeiten nach Updates" changed: the update toast follows.
+  if (next.updateNotes !== before.updateNotes) updates.refresh();
   tray?.refresh();
   app.emit("flowplan-settings", next);
   return publicSettings();
@@ -1683,7 +1685,7 @@ else {
     handoff.ready();
     notifier.start();
     signIn.ready();
-    updates.setupUpdates({ getWindow: frontWindow, changed: () => (buildMenu(), tray?.refresh()) });
+    updates.setupUpdates({ getWindow: frontWindow, changed: () => (buildMenu(), tray?.refresh()), notesLevel: () => settings().updateNotes });
     ready = true;
     // Links and files that came with the start.
     for (const link of [...deepLinks.linksFromArgs(process.argv), ...pendingLinks.splice(0)]) handleLink(link);

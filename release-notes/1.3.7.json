@@ -1,0 +1,16 @@
+{
+  "date": "2026-11-11",
+  "features": [
+    {
+      "de": "Besprechungsnotizen nehmen auch den Systemton auf – Teilnehmende aus Zoom, Teams oder Meet ohne Bot (Windows 10+, macOS 13+).",
+      "en": "Meeting notes record the system sound too – people in Zoom, Teams or Meet without a bot (Windows 10+, macOS 13+).",
+      "issues": [199]
+    }
+  ],
+  "improvements": [
+    {
+      "de": "Fehlt auf dem Mac die Erlaubnis zur Bildschirmaufnahme, öffnet Flowplan die Systemeinstellungen und erklärt, was einzuschalten ist.",
+      "en": "Without the screen recording permission on a Mac, Flowplan opens System Settings and explains what to turn on."
+    }
+  ]
+}
