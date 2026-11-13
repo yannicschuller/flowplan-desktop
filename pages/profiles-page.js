@@ -50,6 +50,23 @@ function render({ profiles, active }) {
     const info = document.createElement("div");
     info.className = "info";
     info.append(name, address);
+    // A certificate trusted for this profile (#271): its fingerprint, and the
+    // way to stop trusting it.
+    if (profile.certificate) {
+      const pinned = document.createElement("div");
+      pinned.className = "certificate";
+      const until = profile.certificate.validTo ? ` · ${t("cert.pinnedUntil", new Date(profile.certificate.validTo).toLocaleDateString(document.documentElement.lang || undefined))}` : "";
+      pinned.textContent = t("cert.pinned", profile.certificate.fingerprint) + until;
+      const unpin = button(t("cert.unpin"), "link", async () => {
+        error.textContent = "";
+        try {
+          render(await desktop.removeCertificate(profile.id));
+        } catch (e) {
+          error.textContent = clean(e);
+        }
+      });
+      info.append(pinned, unpin);
+    }
     const actions = document.createElement("div");
     actions.className = "actions";
     if (profile.id === active) {

@@ -10,6 +10,7 @@
 // Node alone. Whatever comes from config.json is checked again here: the
 // partition is derived from the id, never read from the file.
 const { randomBytes } = require("node:crypto");
+const certificates = require("./certificates");
 
 const ID = /^[a-z0-9]{1,32}$/;
 const MAX_NAME = 60;
@@ -67,7 +68,9 @@ function loadProfiles(config = {}) {
       const legacy = entry.legacy === true && !legacyTaken;
       if (legacy) legacyTaken = true;
       ids.add(entry.id);
-      profiles.push({ id: entry.id, name: cleanName(entry.name, server), server, ...(legacy ? { legacy: true } : {}) });
+      // A trusted (pinned) certificate only for the host of its own address.
+      const certificate = certificates.cleanPin(entry.certificate, certificates.hostOf(server));
+      profiles.push({ id: entry.id, name: cleanName(entry.name, server), server, ...(legacy ? { legacy: true } : {}), ...(certificate ? { certificate } : {}) });
       if (profiles.length >= MAX_PROFILES) break;
     }
   } else {
@@ -82,7 +85,7 @@ function loadProfiles(config = {}) {
 function toConfig(state) {
   const active = activeOf(state);
   return {
-    profiles: state.profiles.map((p) => ({ id: p.id, name: p.name, server: p.server, ...(p.legacy ? { legacy: true } : {}) })),
+    profiles: state.profiles.map((p) => ({ id: p.id, name: p.name, server: p.server, ...(p.legacy ? { legacy: true } : {}), ...(p.certificate ? { certificate: p.certificate } : {}) })),
     activeProfile: active ? active.id : null,
     server: active ? active.server : undefined,
   };
@@ -90,18 +93,39 @@ function toConfig(state) {
 const activeOf = (state) => state.profiles.find((p) => p.id === state.activeProfile) || null;
 const findProfile = (state, id) => state.profiles.find((p) => p.id === id) || null;
 
-function addProfile(state, { name, server }, id = newId()) {
+// `certificate`: the pin the person confirmed while adding (certificates.js).
+function addProfile(state, { name, server, certificate }, id = newId()) {
   const origin = originOf(server);
   if (!origin) throw new Error(`invalid server: ${server}`);
   if (state.profiles.length >= MAX_PROFILES) throw new Error("too many profiles");
   while (findProfile(state, id)) id = newId();
-  const profile = { id, name: cleanName(name, origin), server: origin };
+  const pin = certificates.cleanPin(certificate, certificates.hostOf(origin));
+  const profile = { id, name: cleanName(name, origin), server: origin, ...(pin ? { certificate: pin } : {}) };
   return { state: { profiles: [...state.profiles, profile], activeProfile: id }, profile };
 }
 function renameProfile(state, id, name) {
   const profile = findProfile(state, id);
   if (!profile) throw new Error(`unknown profile: ${id}`);
   return { ...state, profiles: state.profiles.map((p) => (p.id === id ? { ...p, name: cleanName(name, p.server) } : p)) };
+}
+// Trusts (pins) a certificate for a profile, or forgets it (null). A pin for
+// another host than the profile's own is refused.
+function setCertificate(state, id, pin) {
+  const profile = findProfile(state, id);
+  if (!profile) throw new Error(`unknown profile: ${id}`);
+  let certificate = null;
+  if (pin) {
+    certificate = certificates.cleanPin(pin, certificates.hostOf(profile.server));
+    if (!certificate) throw new Error("invalid certificate");
+  }
+  return {
+    ...state,
+    profiles: state.profiles.map((p) => {
+      if (p.id !== id) return p;
+      const { certificate: _old, ...rest } = p;
+      return certificate ? { ...rest, certificate } : rest;
+    }),
+  };
 }
 // Removes a profile; the active one moves to its neighbour (or none).
 function removeProfile(state, id) {
@@ -142,6 +166,7 @@ module.exports = {
   findProfile,
   addProfile,
   renameProfile,
+  setCertificate,
   removeProfile,
   nextProfile,
   profileFromArgs,

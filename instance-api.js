@@ -223,7 +223,8 @@ function createInstanceApi({ origin, fetch }) {
     try {
       response = await fetch(url.href, { method, headers, body, redirect: "error", cache: "no-store", signal: AbortSignal.timeout(timeout) });
     } catch (e) {
-      throw new ApiError("offline", 0, String(e?.cause?.code || e?.code || e?.name || "network"));
+      // session.fetch (Chromium) names the cause in its message: "net::ERR_…".
+      throw new ApiError("offline", 0, String(/net::(ERR_[A-Z0-9_]+)/.exec(String(e?.message || ""))?.[1] || e?.cause?.code || e?.code || e?.name || "network"));
     }
     if (response.url && new URL(response.url).origin !== origin) throw new ApiError("server", response.status);
     const data = await response.json().catch(() => null);

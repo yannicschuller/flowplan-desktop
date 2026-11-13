@@ -130,7 +130,7 @@ const server = "https://flowplan.example.com";
   const ask = main.slice(main.indexOf("async function askAddInstance"), main.indexOf("// Files handed to the app"));
   assert.ok(ask.indexOf("dialog.showMessageBox") < ask.indexOf("profiles.addProfile"), "asked before a profile is added");
   assert.match(ask, /if \(response !== 0\) return;/);
-  assert.match(ask, /await checkServer\(origin\);/, "and only a real Flowplan");
+  assert.match(ask, /certificate = await checkServerTrusting\(origin\);/, "and only a real Flowplan");
   assert.match(ask, /if \(externalUrl\(url\)\) void shell\.openExternal\(url\);/);
   // Dropped files are checked by name and content and read only after the person said where.
   const take = main.slice(main.indexOf("async function importFiles"), main.indexOf("// ---- Menus ----"));

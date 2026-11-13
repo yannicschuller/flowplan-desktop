@@ -159,6 +159,23 @@ button:disabled {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A trusted (pinned) certificate of the profile (#271). */
+.profiles .certificate {
+  color: var(--muted);
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow-wrap: anywhere;
+  margin-top: 4px;
+}
+.profiles .info button.link {
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  margin-top: 2px;
+  color: var(--danger);
+  font-size: 12px;
+  cursor: pointer;
+}
 .profiles .actions {
   display: flex;
   gap: 6px;
