@@ -51,6 +51,7 @@ if (location.protocol === "file:")
     addProfile: (name, server) => ipcRenderer.invoke("flowplan:add-profile", { name, server }),
     renameProfile: (id, name) => ipcRenderer.invoke("flowplan:rename-profile", id, name),
     removeProfile: (id) => ipcRenderer.invoke("flowplan:remove-profile", id),
+    removeCertificate: (id) => ipcRenderer.invoke("flowplan:remove-certificate", id),
     switchProfile: (id) => ipcRenderer.invoke("flowplan:switch-profile", id),
     showProfiles: () => ipcRenderer.invoke("flowplan:show-profiles"),
     newProfile: () => ipcRenderer.invoke("flowplan:new-profile"),

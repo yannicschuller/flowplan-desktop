@@ -28,7 +28,23 @@ Flowplan itself – every new feature – arrives with the server and needs no a
 
 On first start the app always asks for the address of the Flowplan instance, suggesting `https://app.flowplan.org` (HTTPS; `http://localhost` for local tests). More instances are added as profiles (below). Managed installations suggest their own address with `--server=<URL>` or the environment variable `FLOWPLAN_SERVER`; the first start still shows it for confirmation.
 
-The app only accepts a real Flowplan instance: its health check (`/api/health`) must answer as Flowplan, and the address must not redirect to another site. The setup page tells apart an address that cannot be reached, a proxy or VPN that asks for a sign-in first (HTTP 401/403), a server error, a web page that is something else and a server without Flowplan.
+The app only accepts a real Flowplan instance: its health check (`/api/health`) must answer as Flowplan, and the address must not redirect to another site. The setup page tells apart an address that cannot be reached, an untrusted certificate, a proxy or VPN that asks for a sign-in first (HTTP 401/403), a server error, a web page that is something else and a server without Flowplan.
+
+### Self-signed certificates and private CAs
+
+Every request to an instance – the check while adding it, the window, the API the app asks itself (quick capture, tray), notifications, signing out – goes through **Chromium's network stack** with the profile's session, never Node's `fetch` with its own CA list. So a private CA or certificate installed in the system's trust store (macOS Keychain, Windows certificate store, on Linux the NSS database `~/.pki/nssdb`) just works, as in Chrome.
+
+A certificate the system does not trust (self-signed, unknown CA) can be trusted for one profile ([`certificates.js`](certificates.js)): while adding the instance a dialog shows host, subject, issuer, validity and the SHA-256 fingerprint with **Diesem Zertifikat vertrauen** / **Abbrechen** (Cancel is the default). Trusting it pins exactly that certificate (its SHA-256 fingerprint) for that host in that profile – stored with the profile in `config.json` (`certificate`) and checked again when read. The profile's session (`session.setCertificateVerifyProc`) then accepts:
+
+| | |
+| --- | --- |
+| A certificate the system trusts | as always, also on a pinned host – a pin adds trust, it never takes any away |
+| The pinned certificate on the pin's host | yes, also when its names do not cover the host (the pin binds it to the host itself; the dialog says so before) |
+| The pinned certificate on another host, in another profile or the health check of another address | no – never a blanket "ignore certificate errors" |
+| The pinned certificate when expired, not yet valid (a minute of grace for clocks) or revoked | no, with a message; an expired certificate is not offered for trust either |
+| Another untrusted certificate on a pinned host | no – a warning names the old and the new fingerprint, with **Neuem Zertifikat vertrauen** / **Abbrechen** (like SSH host keys). The page only loads once trusted. |
+
+Chromium keeps every verdict for a while (a new verify proc, closed connections or cleared caches do not change that). So the request waits while the dialog is open, and the answer is the verdict Chromium keeps; the health check uses a new in-memory session for every check. When trust changes after a verdict was kept – trusting after **Erneut versuchen** on the offline page, or **Zertifikat nicht mehr vertrauen** under **Profile verwalten …** (which shows the pinned fingerprint) – the app restarts. Update checks and downloads (GitHub) are unchanged.
 
 Only the app's own pages (setup, profiles, offline, sign-in, settings, quick capture, the screen region overlay, the update toast, the quick capture hint) can talk to the app: the bridge `window.flowplanDesktop` exists on `file:` pages alone, every call is checked against the page it comes from ([`guards.js`](guards.js)). The instance itself gets one tiny bridge, `window.FlowplanDesktop`, on the pages of the window profile's own origin only, answered only for the main frame of that origin in that profile's session: `platform`, `version`, `notifications.enabled()` / `setEnabled()` / `refresh()`, `spelling.check(word)` (answered by the spell checker inside the page, no message to the app) and `spelling.addWord(word)` (one word, checked again), `openWindow(url)` (a page of the same instance, never an endpoint or another site) and – only on a Mac with the [on-device model](#apple-intelligence-on-the-mac-optional) switched on – `ai`. It cannot read files, open other sites in the window or hand anything but `http(s)`/`mailto` addresses to the system. Files dropped on the window that the page does not take itself reach the app only from real drops by the person (`isTrusted`, paths from the disk), and nothing is read before the person confirmed where they go. And only the active profile's instance, its sign-in and the identity provider it hands over to may open inside the window – any other address goes to the browser, even one that merely contains `/api/auth/` or belongs to another profile.
 
@@ -283,6 +299,8 @@ npm start                  # the app against any instance
 npm run check              # syntax check
 npm test                   # security guards and features (Node only), offline use, profiles, notifications, Handoff, the desktop features and Apple Intelligence (Linux without a display: xvfb-run -a npm test)
 npm run test:security      # guards alone: bridges, navigation, profiles, notifications, permissions, update source, health check, languages, links, files, settings
+npm run test:certificates  # self-signed certificates: the pin, the verify proc's decision, every request through Chromium (Node only)
+npm run test:certificates-app # self-signed certificates in the running app against an HTTPS stand-in (Electron; xvfb-run on Linux)
 npm run test:features      # the decisions behind the new features, and what the app asks an instance, against a stand-in (Node only)
 npm run test:profiles      # profiles in the running app (Electron; xvfb-run on Linux without a display)
 npm run test:notifications # notifications in the running app against a stand-in instance (Electron; xvfb-run on Linux)

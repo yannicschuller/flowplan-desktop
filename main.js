@@ -14,7 +14,10 @@
 // Mac with Apple Intelligence the instance may use Apple's on-device model
 // (device-ai.js, device-ai-rules.js, native/device-ai) – optional, off with
 // one switch in the settings. What the app asks an instance itself goes
-// through instance-api.js with the profile's own session. Its own words come
+// through instance-api.js with the profile's own session – every request to an
+// instance goes through Chromium's network stack, so the system's trust store
+// applies, and a certificate the person trusted for a profile is accepted
+// there alone (certificates.js). Its own words come
 // in the system language (strings.js); what the window lets through is
 // decided in guards.js.
 const {
@@ -65,6 +68,7 @@ const { createDeviceAi } = require("./device-ai");
 const webCache = require("./web-cache");
 const systemAudio = require("./system-audio");
 const marketplace = require("./marketplace-window");
+const certificates = require("./certificates");
 const { permissionVerdict: screenPermissionVerdict } = require("./screen-capture");
 const fs = require("node:fs");
 
@@ -120,17 +124,48 @@ function normalizeServer(input) {
 // Only a Flowplan instance is accepted: its health check names the service
 // (older versions are recognised by the fields of their answer), and the
 // address must not redirect to another site. The message tells apart an
-// unreachable address, a proxy that wants a sign-in first, a server error, a
-// web page that is something else and no Flowplan at all.
-async function checkServer(origin) {
+// unreachable address, an untrusted certificate, a proxy that wants a sign-in
+// first, a server error, a web page that is something else and no Flowplan at
+// all. Asked with Chromium's network stack (a session of its own, in memory),
+// like the windows – never Node's fetch with its own list of CAs (#271).
+// `pin`: a certificate the person just trusted for this host.
+async function checkServer(origin, pin = null) {
+  const ses = checkSession();
+  const host = certificates.hostOf(origin);
+  const target = { pin, seen: null };
+  checkTargets.set(host, target);
+  installCheckProc(ses);
+  // A redirect to another site is stopped and named (session.fetch does not
+  // tell where a redirect went: response.url stays empty).
+  let redirectedTo = null;
+  ses.webRequest.onBeforeRequest((details, callback) => {
+    let other = null;
+    try {
+      const next = new URL(details.url).origin;
+      if (next !== origin) other = next;
+    } catch {
+      other = String(details.url);
+    }
+    if (other) redirectedTo ??= other;
+    callback(other ? { cancel: true } : {});
+  });
   let response;
   try {
-    response = await fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(8000) });
+    response = await ses.fetch(`${origin}/api/health`, { cache: "no-store", signal: AbortSignal.timeout(8000) });
   } catch (e) {
-    const reason = e?.cause?.code || e?.code || e?.name || "network";
-    throw new Error(t("server.unreachable", reason));
+    if (redirectedTo) throw new Error(t("server.redirects", redirectedTo));
+    const reason = certificates.networkReason(e);
+    const seen = certificates.isCertificateError(reason) ? target.seen : null;
+    const message = certificateProblem(seen, reason);
+    const error = new Error(message || t("server.unreachable", reason));
+    // Not "no Flowplan found": the address is right, its certificate is not trusted.
+    if (message) error.certificateProblem = true;
+    if (seen) error.certificate = seen;
+    throw error;
+  } finally {
+    if (checkTargets.get(host) === target) checkTargets.delete(host);
   }
-  if (new URL(response.url).origin !== origin) throw new Error(t("server.redirects", new URL(response.url).origin));
+  if (redirectedTo) throw new Error(t("server.redirects", redirectedTo));
   const data = await response.json().catch(() => null);
   const verdict = classifyHealth({ status: response.status, contentType: response.headers.get("content-type") || "", data });
   if (verdict === "ok") return true;
@@ -138,6 +173,174 @@ async function checkServer(origin) {
   if (verdict === "error") throw new Error(t("server.status", response.status));
   if (verdict === "html") throw new Error(t("server.html"));
   throw new Error(t("server.notFlowplan"));
+}
+
+// ---- Certificates (certificates.js, #271) ----
+
+// The health check's own session: in memory, with a verify proc that knows
+// the host being checked and the certificate the person may just have trusted.
+// A new one for every check: the network service keeps its verdicts per
+// session, also over a new verify proc.
+const checkTargets = new Map(); // host → { pin, seen }
+let checkCount = 0;
+const checkSession = () => session.fromPartition(`flowplan-server-check-${++checkCount}`);
+function installCheckProc(ses) {
+  ses.setCertificateVerifyProc((request, callback) => {
+    const host = certificates.normalizeHost(request.hostname);
+    const target = checkTargets.get(host);
+    if (!target) return callback(-3);
+    const decision = certificates.verifyDecision(request, { host, pin: target.pin });
+    if (decision.untrusted) target.seen = decision;
+    callback(decision.result);
+  });
+}
+// The message for a certificate the check did not accept (or null).
+function certificateProblem(seen, reason) {
+  if (seen?.untrusted === "expired") return t("server.certExpired", shortDate(seen.info.validFrom), shortDate(seen.info.validTo));
+  if (seen?.untrusted === "revoked") return t("server.certRevoked");
+  if (certificates.isCertificateError(reason)) return t("server.untrusted", reason);
+  return null;
+}
+const shortDate = (iso) => {
+  if (!iso) return "?";
+  try {
+    return new Date(iso).toLocaleDateString(strings.tagOf(strings.locale()), { year: "numeric", month: "short", day: "numeric" });
+  } catch {
+    return iso.slice(0, 10);
+  }
+};
+// Host, subject, issuer, validity and fingerprint for the dialogs.
+function certificateDetails(info, displayHost) {
+  const lines = t("cert.details", displayHost, info.subject || "?", info.issuer || "?", shortDate(info.validFrom), shortDate(info.validTo), info.fingerprint);
+  return info.nameMatches === false ? `${lines}\n\n${t("cert.nameMismatch", info.host)}` : lines;
+}
+// Asks whether to trust a certificate – for the first time, or instead of
+// the pinned one (`previous`). Cancel is the default.
+async function askCertificate(info, displayHost, previous = null, { restart = false } = {}) {
+  if (isMac) app.focus({ steal: true });
+  const details = certificateDetails(info, displayHost);
+  const options = {
+    type: "warning",
+    message: previous ? t("cert.changed", displayHost) : t("cert.untrusted", displayHost),
+    detail: previous ? t("cert.changedDetail", displayHost, previous.fingerprint, details) : t("cert.untrustedDetail", displayHost, details),
+    buttons: [restart ? t("cert.trustRestart") : previous ? t("cert.trustNew") : t("cert.trust"), t("cert.cancel")],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true,
+  };
+  const parent = win && !win.isDestroyed() ? win : null;
+  const { response } = await (parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options));
+  app.emit("flowplan-certificate-asked", { host: info.host, fingerprint: info.fingerprint, previous: previous?.fingerprint || null, trusted: response === 0 });
+  return response === 0;
+}
+// The health check while adding an instance: a certificate the system does
+// not trust can be trusted once the person confirmed it in the dialog. Returns
+// the pin (or null when the system trusts the certificate).
+async function checkServerTrusting(origin) {
+  try {
+    await checkServer(origin);
+    return null;
+  } catch (e) {
+    if (e.certificate?.untrusted !== "new") throw e;
+    if (!(await askCertificate(e.certificate.info, new URL(origin).host))) throw e;
+    const pin = certificates.makePin(e.certificate.info);
+    await checkServer(origin, pin);
+    return pin;
+  }
+}
+// A profile's session accepts its pinned certificate on its own host and
+// nothing else (certificates.verifyDecision). Chromium keeps every verdict
+// for a while – a new verify proc, closed connections or cleared caches do
+// not change that. So a certificate that could be trusted ("new", or
+// "changed" from the pinned one) is answered only once the person decided:
+// the request waits for the dialog, and the answer is the verdict Chromium
+// keeps. A change of trust after that (trusting later, removing the pin)
+// restarts the app.
+const verifiedSessions = new WeakSet();
+function watchCertificates(ses, profile) {
+  if (!profile || verifiedSessions.has(ses)) return;
+  verifiedSessions.add(ses);
+  const profileId = profile.id;
+  ses.setCertificateVerifyProc((request, callback) => {
+    const owner = profiles.findProfile(state, profileId);
+    if (!owner) return callback(-3);
+    const decision = certificates.verifyDecision(request, { host: certificates.hostOf(owner.server), pin: owner.certificate || null });
+    if (decision.untrusted === "new" || decision.untrusted === "changed")
+      return void askForProfile(owner, decision).then((trusted) => callback(trusted ? 0 : decision.result));
+    callback(decision.result);
+    if (decision.untrusted) reportRefused(owner, decision);
+  });
+}
+// One question per profile and certificate, however many requests wait for it.
+const certificateQuestions = new Map(); // "id|fingerprint" → Promise<boolean>
+const certificateDeclined = new Map(); // profile id → the decision declined
+function askForProfile(profile, decision) {
+  const key = `${profile.id}|${decision.info.fingerprint}`;
+  if (!certificateQuestions.has(key))
+    certificateQuestions.set(
+      key,
+      (async () => {
+        const previous = decision.untrusted === "changed" ? profile.certificate : null;
+        const trusted = await askCertificate(decision.info, new URL(profile.server).host, previous);
+        const now = profiles.findProfile(state, profile.id);
+        if (!now || now.server !== profile.server) return false;
+        if (!trusted) {
+          certificateDeclined.set(profile.id, decision);
+          return false;
+        }
+        saveProfiles(profiles.setCertificate(state, profile.id, certificates.makePin(decision.info)));
+        certificateDeclined.delete(profile.id);
+        return true;
+      })()
+        .catch(() => false)
+        .then((trusted) => {
+          // Trusted: from now on the pin decides (a "yes" is never reused for
+          // a certificate that is no longer pinned). Declined: not asked again
+          // in this run, except by "Erneut versuchen".
+          if (trusted) certificateQuestions.delete(key);
+          return trusted;
+        }),
+    );
+  return certificateQuestions.get(key);
+}
+// Expired, not yet valid or revoked: refused, and said once per certificate.
+const certificateReported = new Set();
+function reportRefused(profile, decision) {
+  const key = `${profile.id}|${decision.info?.fingerprint}|${decision.untrusted}`;
+  if (!decision.info || certificateReported.has(key)) return;
+  certificateReported.add(key);
+  const displayHost = new URL(profile.server).host;
+  app.emit("flowplan-certificate-refused", { host: decision.info.host, why: decision.untrusted });
+  const options = {
+    type: "warning",
+    message: t("cert.untrusted", displayHost),
+    detail: `${certificateProblem(decision, "")}\n\n${certificateDetails(decision.info, displayHost)}`,
+    buttons: ["OK"],
+    noLink: true,
+  };
+  const parent = win && !win.isDestroyed() ? win : null;
+  void (parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options)).catch(() => {});
+}
+// Restarts the app: only that empties what Chromium remembers of a certificate.
+function restartForTrust() {
+  app.emit("flowplan-certificate-restart");
+  app.relaunch();
+  app.quit();
+}
+// "Erneut versuchen" after the active profile's certificate was declined:
+// asked again; trusting it now restarts the app. True when it was asked.
+async function retryDeclinedCertificate() {
+  const profile = activeProfile();
+  const decision = profile && certificateDeclined.get(profile.id);
+  if (!decision) return false;
+  const previous = decision.untrusted === "changed" ? profile.certificate : null;
+  if (!(await askCertificate(decision.info, new URL(profile.server).host, previous, { restart: true }))) return true;
+  const now = profiles.findProfile(state, profile.id);
+  if (!now || now.server !== profile.server) return true;
+  saveProfiles(profiles.setCertificate(state, profile.id, certificates.makePin(decision.info)));
+  certificateDeclined.delete(profile.id);
+  restartForTrust();
+  return true;
 }
 
 // The saved instances and the active one (profiles.js). Read once the app is
@@ -332,7 +535,10 @@ function answerDisplayMedia(ses, request, callback) {
 const systemAudioCapability = () => systemAudio.currentCapability({ systemPreferences });
 function sessionFor(profile) {
   const partition = profiles.partitionFor(profile);
-  return partition ? session.fromPartition(partition) : session.defaultSession;
+  const ses = partition ? session.fromPartition(partition) : session.defaultSession;
+  // Its pinned certificate, whatever asks the instance (window, API, notifier).
+  watchCertificates(ses, profile);
+  return ses;
 }
 function setSpellLanguages(list) {
   changeSettings({ spellLanguages: list });
@@ -998,14 +1204,15 @@ async function askAddInstance(origin, url) {
     return;
   }
   if (response !== 0) return;
+  let certificate = null;
   try {
     if (state.profiles.length >= profiles.MAX_PROFILES) throw new Error(t("profiles.tooMany", profiles.MAX_PROFILES));
-    await checkServer(origin);
+    certificate = await checkServerTrusting(origin);
   } catch (e) {
-    dialog.showErrorBox(t("links.failed"), t("server.notFound", origin, e.message));
+    dialog.showErrorBox(t("links.failed"), e.certificateProblem ? e.message : t("server.notFound", origin, e.message));
     return;
   }
-  const { state: next, profile } = profiles.addProfile(state, { name: "", server: origin });
+  const { state: next, profile } = profiles.addProfile(state, { name: "", server: origin, certificate });
   saveProfiles(next);
   if (win && !win.isDestroyed()) replaceWindow(profile, url);
   else createWindow(profile, url);
@@ -1403,21 +1610,27 @@ function handle(channel, fn, { instance = false, window = null } = {}) {
   });
 }
 const publicProfiles = () => ({
-  profiles: state.profiles.map(({ id, name, server }) => ({ id, name, server })),
+  profiles: state.profiles.map(({ id, name, server, certificate }) => ({
+    id,
+    name,
+    server,
+    certificate: certificate ? { fingerprint: certificate.fingerprint, subject: certificate.subject, validTo: certificate.validTo } : null,
+  })),
   active: state.activeProfile,
 });
 handle("flowplan:get-server", () => server() || "");
 handle("flowplan:get-profiles", () => publicProfiles());
 handle("flowplan:add-profile", async (_event, input) => {
   const origin = normalizeServer(input?.server);
+  let certificate = null;
   try {
-    await checkServer(origin);
+    certificate = await checkServerTrusting(origin);
   } catch (e) {
-    throw new Error(t("server.notFound", origin, e.message));
+    throw new Error(e.certificateProblem ? e.message : t("server.notFound", origin, e.message));
   }
   if (state.profiles.length >= profiles.MAX_PROFILES) throw new Error(t("profiles.tooMany", profiles.MAX_PROFILES));
   const before = state.profiles.length;
-  const { state: next, profile } = profiles.addProfile(state, { name: input?.name, server: origin });
+  const { state: next, profile } = profiles.addProfile(state, { name: input?.name, server: origin, certificate });
   // The first instance: once signed in, the setup's last step follows.
   writeConfig({ onboarding: onboarding.afterFirstProfile(readConfig(), before) });
   saveProfiles(next);
@@ -1432,10 +1645,35 @@ handle("flowplan:remove-profile", async (_event, id) => {
   await removeProfileAsk(String(id));
   return publicProfiles();
 });
+// "Zertifikat nicht mehr vertrauen" (pages/profiles.html): asked first, then
+// the pin goes and the app restarts – only that drops the verdicts Chromium
+// keeps for the certificate.
+handle("flowplan:remove-certificate", async (_event, id) => {
+  const profile = profiles.findProfile(state, String(id));
+  if (!profile?.certificate) return publicProfiles();
+  const options = {
+    type: "warning",
+    message: t("cert.unpinConfirm", new URL(profile.server).host),
+    detail: t("cert.unpinDetail", profile.certificate.fingerprint),
+    buttons: [t("cert.unpinRestart"), t("cert.cancel")],
+    defaultId: 1,
+    cancelId: 1,
+    noLink: true,
+  };
+  const { response } = await (win && !win.isDestroyed() ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options));
+  if (response !== 0) return publicProfiles();
+  saveProfiles(profiles.setCertificate(state, profile.id, null));
+  restartForTrust();
+  return publicProfiles();
+});
 handle("flowplan:switch-profile", (_event, id) => switchProfile(String(id)));
 handle("flowplan:show-profiles", () => showProfiles());
 handle("flowplan:new-profile", () => showAddProfile());
-handle("flowplan:retry", () => openServer());
+handle("flowplan:retry", async () => {
+  // "Erneut versuchen" asks again about a certificate declined before.
+  if (await retryDeclinedCertificate()) return;
+  return openServer();
+});
 handle("flowplan:sign-in-paste", (_event, text) => signIn.paste(text));
 handle("flowplan:sign-in-cancel", () => signIn.cancel());
 handle("flowplan:settings-get", () => publicSettings());
