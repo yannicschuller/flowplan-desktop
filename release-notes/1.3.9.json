@@ -1,10 +1,10 @@
 {
   "features": [
     {
-      "de": "Eigene Zertifikate: Server mit eigener Zertifizierungsstelle funktionieren, sobald dein System ihr vertraut. Für ein selbstsigniertes Zertifikat zeigt die App beim Hinzufügen Aussteller, Gültigkeit und SHA-256-Fingerabdruck – „Diesem Zertifikat vertrauen“ merkt sich genau dieses Zertifikat für diesen Server. Ändert es sich, warnt die App mit altem und neuem Fingerabdruck; unter „Profile verwalten …“ entfernst du es wieder.",
-      "en": "Own certificates: servers with a private certificate authority work as soon as your system trusts it. For a self-signed certificate, the app shows issuer, validity and SHA-256 fingerprint when you add the server – “Trust This Certificate” remembers exactly that certificate for that server. If it changes, the app warns you with the old and new fingerprint; “Manage Profiles…” removes it again.",
-      "fr": "Certificats personnels : les serveurs avec une autorité de certification privée fonctionnent dès que votre système lui fait confiance. Pour un certificat auto-signé, l’app affiche l’émetteur, la validité et l’empreinte SHA-256 à l’ajout du serveur – « Faire confiance à ce certificat » mémorise exactement ce certificat pour ce serveur. S’il change, l’app vous avertit avec l’ancienne et la nouvelle empreinte ; « Gérer les profils… » le retire.",
-      "zh": "自有证书：使用私有证书颁发机构的服务器，只要系统信任该机构即可使用。对于自签名证书，添加服务器时应用会显示颁发者、有效期和 SHA-256 指纹；选择“信任此证书”后，应用只为该服务器记住这一个证书。证书变化时，应用会显示新旧指纹并发出警告；可在“管理配置文件…”中将其移除。"
+      "de": "Eigene Zertifikate: Eine eigene Zertifizierungsstelle funktioniert, sobald dein System ihr vertraut. Ein selbstsigniertes Zertifikat kannst du beim Hinzufügen nach Prüfung des Fingerabdrucks für diesen Server bestätigen; ändert es sich, warnt die App.",
+      "en": "Own certificates: a private certificate authority works as soon as your system trusts it. You can confirm a self-signed certificate for that server after checking its fingerprint when you add it; if it changes, the app warns you.",
+      "fr": "Certificats personnels : une autorité de certification privée fonctionne dès que votre système lui fait confiance. Un certificat auto-signé peut être confirmé pour ce serveur après vérification de son empreinte ; s’il change, l’app vous avertit.",
+      "zh": "自有证书：只要系统信任私有证书颁发机构即可使用。添加服务器时，可在核对指纹后为该服务器确认自签名证书；证书变化时应用会发出警告。"
     }
   ]
 }
