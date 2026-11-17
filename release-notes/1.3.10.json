@@ -1,0 +1,10 @@
+{
+  "features": [
+    {
+      "de": "Übersetzungen aus der Community: Die Texte der App lassen sich jetzt auf translate.flowplan.org verbessern – angemeldet mit GitHub, jede Änderung kommt als Pull Request.",
+      "en": "Translations from the community: the app's texts can now be improved at translate.flowplan.org – sign in with GitHub, every change arrives as a pull request.",
+      "fr": "Traductions par la communauté : les textes de l’app peuvent désormais être améliorés sur translate.flowplan.org – connectez-vous avec GitHub, chaque modification arrive sous forme de pull request.",
+      "zh": "社区翻译：现在可以在 translate.flowplan.org 上改进应用的文本——使用 GitHub 登录，每次修改都会以拉取请求的形式提交。"
+    }
+  ]
+}
