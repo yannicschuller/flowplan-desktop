@@ -1618,6 +1618,17 @@ const publicProfiles = () => ({
   })),
   active: state.activeProfile,
 });
+// The words of the app's own pages (strings.js, locales/*.json): asked by
+// the preload, synchronously, before the page runs – the sandboxed page
+// cannot read the catalogues itself. Nothing secret, but only the app's own
+// pages get them.
+ipcMain.on("flowplan:strings", (event) => {
+  let value = null;
+  try {
+    if (isOwnPage(event.senderFrame?.url, defaultPagesDir)) value = strings.CATALOGUES;
+  } catch {}
+  event.returnValue = value;
+});
 handle("flowplan:get-server", () => server() || "");
 handle("flowplan:get-profiles", () => publicProfiles());
 handle("flowplan:add-profile", async (_event, input) => {

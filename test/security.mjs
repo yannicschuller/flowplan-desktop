@@ -435,17 +435,61 @@ const server = "https://flowplan.example.com";
   for (const value of ["zh", "zh-CN", "zh_CN", "zh-Hans", "zh-Hans-CN", "zh-SG", "zh-Hans-HK"]) assert.equal(strings.pickLocale(value), "zh", value);
   for (const value of ["zh-TW", "zh_HK", "zh-MO", "zh-Hant", "zh-Hant-TW"]) assert.equal(strings.pickLocale(value), "en", value);
   assert.deepEqual(strings.LOCALES, ["de", "en", "fr", "zh"]);
+  // The catalogues (locales/*.json, edited by translate.flowplan.org): flat
+  // { "area.key": "text" }, written as JSON.stringify(…, null, 2) + "\n".
+  const localesDir = join(root, "locales");
+  const catalogues = {};
+  for (const lang of strings.LOCALES) {
+    const raw = readFileSync(join(localesDir, `${lang}.json`), "utf8");
+    const parsed = JSON.parse(raw);
+    assert.ok(parsed && typeof parsed === "object" && !Array.isArray(parsed), `${lang}.json: an object`);
+    for (const [key, text] of Object.entries(parsed)) assert.equal(typeof text, "string", `${lang}.json: ${key} is text`);
+    assert.equal(raw, JSON.stringify(parsed, null, 2) + "\n", `${lang}.json: formatted with two spaces and a final newline`);
+    catalogues[lang] = parsed;
+  }
+  assert.deepEqual(strings.CATALOGUES, catalogues, "strings.js reads the catalogues");
+  const enKeys = Object.keys(catalogues.en);
+  assert.ok(enKeys.length > 300, "English has the words");
+  // German (written first) and English (the source of translations): the same
+  // keys in the same order, none empty.
+  assert.deepEqual(Object.keys(catalogues.de), enKeys, "de.json and en.json: the same keys in the same order");
+  for (const lang of ["de", "en"]) for (const key of enKeys) assert.ok(catalogues[lang][key].trim(), `${lang}.json: ${key} is not empty`);
+  // French and Chinese: no key that English does not have, and in English's
+  // order; a missing or empty text falls back to English.
+  for (const lang of ["fr", "zh"]) {
+    const keys = Object.keys(catalogues[lang]);
+    for (const key of keys) assert.ok(Object.hasOwn(catalogues.en, key), `${lang}.json: ${key} is not in en.json`);
+    assert.deepEqual(keys, enKeys.filter((key) => Object.hasOwn(catalogues[lang], key)), `${lang}.json: in the order of en.json`);
+    const missing = enKeys.filter((key) => !catalogues[lang][key]?.trim());
+    if (missing.length) console.log(`  ${lang}.json: ${missing.length} texts in English (${missing.slice(0, 5).join(", ")}${missing.length > 5 ? ", …" : ""})`);
+  }
+  strings.setLocale("fr");
+  const sample = enKeys.find((key) => catalogues.fr[key]);
+  assert.equal(strings.t(sample), catalogues.fr[sample]);
+  // Every language has English's {0} placeholders.
   const placeholders = (text) => (text.match(/\{\d+\}/g) || []).sort().join();
-  for (const [key, entry] of Object.entries(strings.STRINGS)) {
-    assert.equal(entry.length, strings.LOCALES.length, `${key}: de, en, fr, zh`);
-    for (const text of entry) assert.ok(text.trim(), `${key}: no empty text`);
-    for (const text of entry) assert.equal(placeholders(text), placeholders(entry[1]), `${key}: same placeholders`);
-  }
+  for (const lang of strings.LOCALES)
+    for (const [key, text] of Object.entries(catalogues[lang])) if (text) assert.equal(placeholders(text), placeholders(catalogues.en[key]), `${lang}.json: ${key} has the same placeholders as English`);
+  // French says "vous", never "tu".
+  for (const [key, text] of Object.entries(catalogues.fr)) assert.doesNotMatch(text, /(^|[\s'’«(-])(tu|toi|ton|ta|tes|te)(?=$|[\s,.!?:;»)])/iu, `fr.json: ${key} says "vous"`);
   // Chinese text is Chinese (not a copied English one), except a few fixed values.
-  for (const [key, entry] of Object.entries(strings.STRINGS)) {
-    if (["signIn.codePlaceholder", "setup.placeholder", "capture.refused", "updates.ofSize"].includes(key)) continue;
-    assert.match(entry[3], /\p{Script=Han}/u, `${key}: Chinese`);
+  for (const [key, text] of Object.entries(catalogues.zh)) {
+    if (!text || ["signIn.codePlaceholder", "setup.placeholder", "capture.refused", "updates.ofSize"].includes(key)) continue;
+    assert.match(text, /\p{Script=Han}/u, `${key}: Chinese`);
   }
+  // Context for translators: every key, nothing else.
+  const context = JSON.parse(readFileSync(join(localesDir, "context.json"), "utf8"));
+  assert.deepEqual(Object.keys(context), enKeys, "context.json: every key of en.json, in its order");
+  for (const [key, text] of Object.entries(context)) assert.ok(typeof text === "string" && text.trim(), `context.json: ${key}`);
+  // The pages get the catalogues from the preload, asked from main.js, which
+  // answers only the app's own pages.
+  const preloadSource = readFileSync(join(root, "preload.js"), "utf8");
+  const mainSource = readFileSync(join(root, "main.js"), "utf8");
+  assert.match(preloadSource.slice(0, preloadSource.indexOf("else if (instance")), /strings: ipcRenderer\.sendSync\("flowplan:strings"\) \|\| \{\},/, "the pages' bridge only");
+  assert.match(mainSource, /ipcMain\.on\("flowplan:strings", \(event\) => \{\s*let value = null;\s*try \{\s*if \(isOwnPage\(event\.senderFrame\?\.url, defaultPagesDir\)\) value = strings\.CATALOGUES;/, "the app's own pages only");
+  // The packaged app has the catalogues.
+  const packaged = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).build.files;
+  for (const lang of strings.LOCALES) assert.ok(packaged.includes(`locales/${lang}.json`), `package.json build.files: locales/${lang}.json`);
   strings.setLocale("de");
   assert.equal(strings.t("menu.checkUpdates"), "Nach Updates suchen …");
   assert.equal(strings.t("menu.nextProfile"), "Nächstes Profil");

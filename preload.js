@@ -4,7 +4,8 @@
 //
 // - window.flowplanDesktop: the app's own pages (setup, profiles, offline,
 //   sign-in, settings, quick capture, the screen region overlay, the update
-//   toast and the quick capture hint) on file: – the profiles, the sign-in,
+//   toast and the quick capture hint) on file: – their words (strings.js,
+//   locales/), the profiles, the sign-in,
 //   the settings, quick capture and the toasts' buttons. The capture and
 //   region channels answer only their own window (main.js).
 // - window.FlowplanDesktop: the pages of the window profile's own instance
@@ -46,6 +47,8 @@ const WORD = /^\p{L}[\p{L}\p{M}'’-]{0,63}$/u;
 if (location.protocol === "file:")
   contextBridge.exposeInMainWorld("flowplanDesktop", {
     platform: process.platform,
+    // The catalogues of locales/ for strings.js (the page cannot read files).
+    strings: ipcRenderer.sendSync("flowplan:strings") || {},
     getServer: () => ipcRenderer.invoke("flowplan:get-server"),
     getProfiles: () => ipcRenderer.invoke("flowplan:get-profiles"),
     addProfile: (name, server) => ipcRenderer.invoke("flowplan:add-profile", { name, server }),
