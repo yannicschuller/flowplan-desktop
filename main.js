@@ -41,7 +41,7 @@ const {
 const path = require("node:path");
 const updates = require("./updates");
 const { setupBrowserSignIn, passkeyWay, chooseWebAuthnAccount, enableTouchId } = require("./sign-in");
-const { fallbackFor } = require("./fallback");
+const { fallbackFor, errorPageFallback } = require("./fallback");
 const strings = require("./strings");
 const { isOwnPage, isInstancePage, allowedInWindow, isSignInRedirect, permissionAllowed, classifyHealth, defaultPagesDir, sameOrigin: sameOriginAs, instancePageUrl, opensOwnWindow, externalUrl, dictionaryWord, fromWindow } = require("./guards");
 const profiles = require("./profiles");
@@ -431,6 +431,12 @@ const hostsOf = (id) => {
   return identityHosts.get(id);
 };
 const ownerOf = (ses) => profiles.findProfile(state, sessionOwner.get(ses));
+// The last main-frame answer per window (webContents → { url, flowplan, contentType }).
+const mainFrameAnswers = new WeakMap();
+const responseHeader = (headers, name) => {
+  for (const [key, value] of Object.entries(headers || {})) if (key.toLowerCase() === name) return String(Array.isArray(value) ? value[0] : value);
+  return "";
+};
 function prepareSession(ses) {
   if (prepared.has(ses)) return;
   prepared.add(ses);
@@ -474,6 +480,17 @@ function prepareSession(ses) {
         .catch(() => null)
         .then((id) => (id ? callback(id) : callback()));
     });
+  // What a window's page answered (#373): whether it came from Flowplan
+  // (its build header) – a proxy's error page instead leads back
+  // (errorPageFallback in wireWindow).
+  ses.webRequest.onResponseStarted((details) => {
+    if (details.resourceType !== "mainFrame" || !details.webContents) return;
+    mainFrameAnswers.set(details.webContents, {
+      url: details.url,
+      flowplan: !!responseHeader(details.responseHeaders, "x-flowplan-build"),
+      contentType: responseHeader(details.responseHeaders, "content-type"),
+    });
+  });
   ses.webRequest.onBeforeRedirect((details) => {
     if (details.resourceType !== "mainFrame") return;
     // The marketplace window's own sign-in (GitHub) is no sign-in of the instance.
@@ -649,6 +666,19 @@ function wireWindow(w, profileId, { primary }) {
     // Offline copies open from the service worker under "/" (fallback.js).
     if (fallbackFor(url, origin()) === "start") return void w.loadURL(origin()).catch(() => {});
     loadPage("offline.html", { server: origin() || "", error: description || String(code) }, w);
+  });
+  // A page of the instance that came as the reverse proxy's error page
+  // ("404 page not found", #373): back to the start page, or the offline
+  // page with "Try again" and "Profiles" – never a dead end.
+  w.webContents.on("did-navigate", (_e, url, code) => {
+    if (primary && win !== w) return;
+    const seen = mainFrameAnswers.get(w.webContents);
+    const next = errorPageFallback({ url, origin: origin(), status: code, answer: seen && seen.url === url ? seen : null });
+    if (!next) return;
+    console.warn(`Flowplan: ${url} answered with an error page not from Flowplan (HTTP ${code})`);
+    app.emit("flowplan-error-page", { url, status: code, next });
+    if (next === "start") return void w.loadURL(origin()).catch(() => {});
+    loadPage("offline.html", { server: origin() || "", error: `HTTP ${code}` }, w);
   });
   // First run: the instance is signed in – the setup's last step
   // ("So soll Flowplan auf diesem Computer laufen", onboarding.js).

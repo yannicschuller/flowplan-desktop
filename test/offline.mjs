@@ -13,7 +13,7 @@ import { createRequire } from "node:module";
 import assert from "node:assert/strict";
 
 const require = createRequire(import.meta.url);
-const { fallbackFor } = require("../fallback.js");
+const { fallbackFor, errorPageFallback } = require("../fallback.js");
 // FLOWPLAN_APP: path of a packaged app executable instead of the dev build.
 const packaged = process.env.FLOWPLAN_APP;
 const executablePath = packaged || require("electron");
@@ -29,6 +29,31 @@ const executablePath = packaged || require("electron");
   assert.equal(fallbackFor(`${origin}/share/abc`, undefined), "offline-page");
   assert.equal(fallbackFor("not a url", origin), "offline-page");
   console.log("✔ Rückfall bei Ladefehlern");
+}
+
+// An error page of the reverse proxy instead of Flowplan (#373).
+{
+  const origin = "https://flowplan.example.com";
+  const proxy = { flowplan: false, contentType: "text/plain; charset=utf-8" };
+  const own = { flowplan: true, contentType: "text/html; charset=utf-8" };
+  const fallback = (url, status, answer) => errorPageFallback({ url, origin, status, answer });
+  // Traefik's "404 page not found" on the start page, after signing out.
+  assert.equal(fallback(`${origin}/`, 404, proxy), "offline-page");
+  assert.equal(fallback(`${origin}/?w=1`, 404, null), "offline-page");
+  assert.equal(fallback(`${origin}/`, 502, { flowplan: false, contentType: "text/html" }), "offline-page");
+  // Elsewhere on the instance: the start page first (the offline copy).
+  assert.equal(fallback(`${origin}/share/abc`, 404, proxy), "start");
+  assert.equal(fallback(`${origin}/share/abc`, 503, null), "start");
+  // Flowplan's own pages stay, also those of instances without the build header.
+  assert.equal(fallback(`${origin}/share/abc`, 404, own), null);
+  assert.equal(fallback(`${origin}/`, 500, own), null);
+  assert.equal(fallback(`${origin}/share/abc`, 404, { flowplan: false, contentType: "text/html" }), null);
+  assert.equal(fallback(`${origin}/share/abc`, 404, null), null);
+  // Answers that are fine, other sites, no profile.
+  assert.equal(fallback(`${origin}/`, 200, proxy), null);
+  assert.equal(fallback("https://login.example.com/", 404, proxy), null);
+  assert.equal(errorPageFallback({ url: `${origin}/`, origin: undefined, status: 404, answer: proxy }), null);
+  console.log("✔ Fehlerseite des Proxys führt zurück");
 }
 
 const worker = `
@@ -220,4 +245,57 @@ await stop();
   await app.close();
   await new Promise((closed) => (server.close(closed), server.closeAllConnections()));
   console.log("✔ Veralteter Zwischenspeicher nach Updates geleert");
+}
+
+// Signed out, and the reverse proxy answers the start page with its own
+// "404 page not found" (#373): the app's offline page with "Try again" and
+// "Profiles" instead of a dead end; Flowplan's own error pages stay.
+{
+  let proxied = false;
+  const server = createServer((req, res) => {
+    if (req.url === "/api/health") {
+      res.setHeader("Content-Type", "application/json");
+      return res.end(JSON.stringify({ service: "flowplan" }));
+    }
+    if (req.url === "/missing") {
+      res.writeHead(404, { "Content-Type": "text/html", "X-Flowplan-Build": "b1" });
+      return res.end("<!doctype html><title>Flowplan</title><h1>Flowplan 404</h1>");
+    }
+    if (proxied || req.url === "/gone") {
+      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+      return res.end("404 page not found\n");
+    }
+    res.writeHead(200, { "Content-Type": "text/html", "X-Flowplan-Build": "b1" });
+    res.end("<!doctype html><title>Flowplan</title><h1>Signed out</h1>");
+  });
+  await new Promise((done) => server.listen(0, "127.0.0.1", done));
+  const site = `http://localhost:${server.address().port}`;
+  const home = mkdtempSync(join(tmpdir(), "flowplan-proxy-"));
+  writeFileSync(join(home, "config.json"), JSON.stringify({ server: site }));
+  const app = await electron.launch({ executablePath, args: [...(packaged ? [] : ["."]), `--user-data-dir=${home}`], cwd: new URL("..", import.meta.url).pathname });
+  const window = await app.firstWindow();
+  await window.waitForSelector("text=Signed out", { timeout: 30000 });
+  // Flowplan's own "not found" stays (it links back itself).
+  await window.evaluate((url) => location.assign(url), `${site}/missing`);
+  await window.waitForSelector("text=Flowplan 404");
+  await new Promise((done) => setTimeout(done, 800));
+  assert.equal(window.url(), `${site}/missing`);
+  // The proxy's page elsewhere: back to the start page.
+  await window.evaluate((url) => location.assign(url), `${site}/gone`);
+  await window.waitForSelector("text=Signed out", { timeout: 15000 });
+  assert.equal(window.url(), `${site}/`);
+  // The proxy's page on the start page (as after signing out): the offline page.
+  proxied = true;
+  await window.evaluate(() => location.assign("/"));
+  await window.waitForSelector("#retry", { timeout: 15000 });
+  assert.equal(offlinePage(window.url()), true);
+  assert.match(window.url(), /error=HTTP\+404|error=HTTP%20404/);
+  assert.equal(await window.locator("#profiles").count(), 1);
+  // "Try again" once Flowplan answers again.
+  proxied = false;
+  await window.click("#retry");
+  await window.waitForSelector("text=Signed out", { timeout: 15000 });
+  await app.close();
+  await new Promise((closed) => (server.close(closed), server.closeAllConnections()));
+  console.log("✔ 404 des Proxys nach dem Abmelden: Offline-Seite statt Sackgasse");
 }
