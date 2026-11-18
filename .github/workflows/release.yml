@@ -139,7 +139,7 @@ jobs:
           cat build/update.json
       # Touch ID for passkeys in the window (optional, #356): only with the
       # secret MAC_PROVISIONING_PROFILE – a Developer ID provisioning profile
-      # for app.flowplan.desktop with Keychain Sharing, base64 – and a signed
+      # for app.flowplan.desktop, base64 – and a signed
       # build. scripts/touchid.mjs checks the profile against APPLE_TEAM_ID,
       # writes the main app's entitlements (keychain-access-groups,
       # application identifier, team) and names the keychain group in

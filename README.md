@@ -255,7 +255,7 @@ How it switches on – nothing changes before all of this holds:
 
 **Steps for the maintainer** (Apple Developer account of team `V7N2K54KJN`, the one that signs the releases):
 
-1. [developer.apple.com](https://developer.apple.com/account/resources/identifiers/list) → Certificates, Identifiers & Profiles → **Identifiers**: open the App ID `app.flowplan.desktop` (or create it: App IDs → App, Bundle ID *Explicit* `app.flowplan.desktop`), tick **Keychain Sharing** under Capabilities and **Save**.
+1. [developer.apple.com](https://developer.apple.com/account/resources/identifiers/list) → Certificates, Identifiers & Profiles → **Identifiers**: make sure the App ID `app.flowplan.desktop` exists (or create it: App IDs → App, Bundle ID *Explicit* `app.flowplan.desktop`). No capability needs to be ticked: every provisioning profile already carries the keychain group `<TEAM>.*`, which Touch ID uses ("Keychain Sharing" is an Xcode term, not a switch in the portal).
 2. **Profiles → +** → under *Distribution* **Developer ID** → App ID `app.flowplan.desktop` → the **Developer ID Application** certificate that `CSC_LINK` holds → name it (e.g. *Flowplan Desktop Developer ID*) → **Generate** and download the `.provisionprofile`.
 3. Check it on a Mac: `security cms -D -i Flowplan_Desktop_Developer_ID.provisionprofile | plutil -extract Entitlements xml1 -o - -` should list `com.apple.application-identifier` = `V7N2K54KJN.app.flowplan.desktop` and `keychain-access-groups` with `V7N2K54KJN.*`.
 4. `base64 -i Flowplan_Desktop_Developer_ID.provisionprofile | pbcopy` → repository secret **`MAC_PROVISIONING_PROFILE`** (Settings → Secrets and variables → Actions). `APPLE_TEAM_ID` must be `V7N2K54KJN`.
@@ -306,7 +306,7 @@ Releases are unsigned until the repository has these secrets (Settings → Secre
 | `CSC_LINK`, `CSC_KEY_PASSWORD` | macOS: Developer ID Application certificate (`.p12`, base64 or a URL) and its password |
 | `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | macOS notarization |
 | `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD` | Windows code signing certificate |
-| `MAC_PROVISIONING_PROFILE` | optional: macOS Developer ID provisioning profile with Keychain Sharing (base64) – [Touch ID for passkeys](#passkeys-with-touch-id-on-macos) |
+| `MAC_PROVISIONING_PROFILE` | optional: macOS Developer ID provisioning profile for `app.flowplan.desktop` (base64) – [Touch ID for passkeys](#passkeys-with-touch-id-on-macos) |
 
 With `CSC_LINK` set, the release workflow marks the macOS app as signed (`build/update.json`) and it updates itself like on Windows. The workflow imports the certificate into a keychain of its own and passes it to electron-builder by name (`CSC_KEYCHAIN`, `CSC_NAME`); the official macOS releases are signed and notarized from 1.0.6 on.
 

@@ -1,6 +1,7 @@
 // Touch ID for passkeys in the macOS app (#356), prepared by the release
 // workflow – only when the secret MAC_PROVISIONING_PROFILE holds a Developer
-// ID provisioning profile for app.flowplan.desktop with Keychain Sharing.
+// ID provisioning profile for app.flowplan.desktop (its keychain-access-groups,
+// <TEAM>.* by default, must cover the passkey group).
 // Without it, nothing of this runs: the app keeps build/entitlements.mac.plist
 // and no profile, and passkeys go to the browser as before.
 //
@@ -36,7 +37,7 @@ export function profileProblems(entitlements, team) {
   const groups = Array.isArray(e["keychain-access-groups"]) ? e["keychain-access-groups"] : [];
   const group = keychainGroup(team);
   const covered = groups.some((g) => g === group || (typeof g === "string" && g.endsWith(".*") && group.startsWith(g.slice(0, -1))));
-  if (!covered) problems.push(`the profile has no keychain-access-groups covering ${group} (Keychain Sharing on the App ID) – it lists ${JSON.stringify(groups)}`);
+  if (!covered) problems.push(`the profile has no keychain-access-groups covering ${group} (a Developer ID profile for app.flowplan.desktop normally lists <TEAM>.*) – it lists ${JSON.stringify(groups)}`);
   return problems;
 }
 
