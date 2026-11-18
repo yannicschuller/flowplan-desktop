@@ -66,13 +66,13 @@ const server = "https://flowplan.example.com";
   assert.match(preload, /if \(!ai\) contextBridge\.exposeInMainWorld\("FlowplanDesktop", bridge\);/);
   assert.match(preload, /Object\.defineProperty\(window, "FlowplanDesktop", \{ value: Object\.freeze\(\{ \.\.\.parts, ai \}\), enumerable: true \}\)/);
   const instanceBridge = preload.slice(preload.indexOf("const bridge = {"));
-  const INSTANCE_CHANNELS = ["ai-availability", "ai-cancel", "ai-generate", "ai-stream", "clear-cache", "drop-files", "history-state", "notifications-enabled", "notifications-refresh", "notifications-set-enabled", "open-window", "spelling-add-word", "system-audio-arm"];
+  const INSTANCE_CHANNELS = ["add-passkey-in-browser", "ai-availability", "ai-cancel", "ai-generate", "ai-stream", "clear-cache", "drop-files", "history-state", "notifications-enabled", "notifications-refresh", "notifications-set-enabled", "open-window", "spelling-add-word", "system-audio-arm"];
   // ai-present and device-key ask before the page runs, marketplace-arm right before window.open
   // (all three synchronously, checked below); ai-chunk and history-command come from the app.
   assert.deepEqual(
     [...new Set([...instanceBridge.matchAll(/"flowplan:([a-z-]+)"/g)].map((m) => m[1]))].filter((c) => !["ai-present", "device-key", "system-audio", "marketplace-arm", "ai-chunk", "history-command"].includes(c)).sort(),
     INSTANCE_CHANNELS,
-    "notifications, a word, a window, dropped files, back and forward, the on-device model, clearing the window's cache, arming system audio – nothing else",
+    "notifications, a word, a window, dropped files, back and forward, the on-device model, clearing the window's cache, arming system audio, the passkey link – nothing else",
   );
   // Back and forward: two booleans in, a fixed word out – nothing else crosses.
   assert.match(readFileSync(join(root, "main.js"), "utf8"), /handle\("flowplan:history-state", \(event, back, forward\) => void \(historyStates\.set\(event\.sender, \{ back: back === true, forward: forward === true \}\)/);
@@ -87,6 +87,7 @@ const server = "https://flowplan.example.com";
   // What the instance channels take is checked again in the main process.
   assert.match(main, /handle\("flowplan:spelling-add-word", \(event, word\) => dictionaryWord\(word\) && /);
   assert.match(main, /handle\("flowplan:drop-files", \(event, paths\) => void takeFiles\(fileRules\.droppedPaths\(paths\)\)/);
+  assert.match(main, /const target = passkeyLinkUrl\(url, ownerOf\(event\.sender\.session\)\?\.server\);\s*if \(!target \|\| Date\.now\(\) - passkeyLinkAt < 2000\) return false;/, "the passkey link: only the calling session's own instance");
   assert.match(main, /handle\("flowplan:open-window", \(event, url\) => void openPageWindow\(ownerOf\(event\.sender\.session\)\?\.id, url\)/, "a window of the calling session's own profile");
   assert.match(main, /const target = profile && instancePageUrl\(url, profile\.server\);\s*if \(!target\) return null;/, "and only a page of its instance");
   // Clearing the cache (#182): the caller's own session, HTTP and code
@@ -606,6 +607,35 @@ const server = "https://flowplan.example.com";
   assert.match(main, /\{ id: "dev-tools", role: "toggleDevTools", label: t\("menu.devTools"\), accelerator: isMac \? "Alt\+Cmd\+I" : "Ctrl\+Shift\+I" \}/);
   assert.doesNotMatch(main, /openDevTools\(/, "opened by the person only");
   console.log("✔ Entwicklerwerkzeuge nur über das Menü, ohne Debug-Port");
+}
+
+// "Passkey hinzufügen" → "Im Schlüsselbund (iCloud)": only the profile's own
+// /passkey-add?token=… goes to the default browser.
+{
+  const { passkeyLinkUrl } = guards;
+  const token = "A".repeat(40) + "b_-";
+  assert.equal(passkeyLinkUrl(`${server}/passkey-add?token=${token}`, server), `${server}/passkey-add?token=${token}`);
+  assert.equal(passkeyLinkUrl(`http://localhost:3000/passkey-add?token=${token}`, "http://localhost:3000"), `http://localhost:3000/passkey-add?token=${token}`, "loopback http like the instance");
+  for (const bad of [
+    `https://evil.example/passkey-add?token=${token}`,
+    `http://flowplan.example.com/passkey-add?token=${token}`,
+    `${server}/api/auth/desktop?token=${token}`,
+    `${server}/passkey-add/../login?token=${token}`,
+    `${server}/passkey-add?token=short`,
+    `${server}/passkey-add?token=${token}&return=flowplan://passkey?state=xxxxxxxxxxxxxxxxxxxx`,
+    `${server}/passkey-add?token=${token}&token=${token}`,
+    `${server}/passkey-add?token=${token}#frag`,
+    `https://user:pw@flowplan.example.com/passkey-add?token=${token}`,
+    `file:///passkey-add?token=${token}`,
+    "javascript:alert(1)",
+    "",
+    42,
+    undefined,
+  ])
+    assert.equal(passkeyLinkUrl(bad, server), null, String(bad));
+  assert.equal(passkeyLinkUrl(`http://flowplan.example.com/passkey-add?token=${token}`, "http://flowplan.example.com"), null, "an instance over plain http is no instance");
+  assert.equal(passkeyLinkUrl(`${server}/passkey-add?token=${token}`, undefined), null, "no profile, nothing");
+  console.log("✔ Passkey-Link nur zur eigenen Instanz");
 }
 
 // The release workflow checks for a supported Electron the same way CI does.

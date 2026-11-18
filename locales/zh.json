@@ -358,6 +358,8 @@
   "passkey.chooseDetail": "{0} 保存了多个通行密钥。你要使用哪一个登录？",
   "passkey.unnamed": "未命名的通行密钥",
   "passkey.touchIdReason": "使用 $1 的通行密钥",
+  "passkey.browserFailed": "无法打开浏览器",
+  "passkey.browserFailedDetail": "为“添加通行密钥”，Flowplan 会打开你的默认浏览器。请在系统设置中确认已设定默认浏览器，然后重试。",
   "setup.title": "设置 Flowplan",
   "setup.heading": "欢迎使用 Flowplan",
   "setup.text": "连接到 app.flowplan.org，或输入你自己的 Flowplan 实例地址。以后可以在菜单的“账户”下添加更多实例。",

@@ -40,10 +40,10 @@ const {
 } = require("electron");
 const path = require("node:path");
 const updates = require("./updates");
-const { setupBrowserSignIn, passkeyWay, chooseWebAuthnAccount, enableTouchId } = require("./sign-in");
+const { setupBrowserSignIn, passkeyWay, passkeyLinkOffered, chooseWebAuthnAccount, enableTouchId } = require("./sign-in");
 const { fallbackFor, errorPageFallback } = require("./fallback");
 const strings = require("./strings");
-const { isOwnPage, isInstancePage, allowedInWindow, isSignInRedirect, permissionAllowed, classifyHealth, defaultPagesDir, sameOrigin: sameOriginAs, instancePageUrl, opensOwnWindow, externalUrl, dictionaryWord, fromWindow } = require("./guards");
+const { isOwnPage, isInstancePage, allowedInWindow, isSignInRedirect, permissionAllowed, classifyHealth, defaultPagesDir, sameOrigin: sameOriginAs, instancePageUrl, opensOwnWindow, externalUrl, dictionaryWord, fromWindow, passkeyLinkUrl } = require("./guards");
 const profiles = require("./profiles");
 const { setupNotifier } = require("./notifier");
 const notificationRules = require("./notifications");
@@ -601,7 +601,7 @@ function makeWindow(profile, { bounds = {}, title = "Flowplan" } = {}) {
       spellcheck: true,
       ...(partition ? { partition } : {}),
       // The preload offers window.FlowplanDesktop on this instance alone.
-      additionalArguments: profile ? [`--flowplan-instance=${profile.server}`, `--flowplan-version=${app.getVersion()}`, `--flowplan-passkeys=${passkeyWay()}`] : [],
+      additionalArguments: profile ? [`--flowplan-instance=${profile.server}`, `--flowplan-version=${app.getVersion()}`, `--flowplan-passkeys=${passkeyWay()}`, ...(passkeyLinkOffered() ? ["--flowplan-passkey-link=1"] : [])] : [],
     },
   });
   windowProfile.set(w, profile ? profile.id : null);
@@ -1780,6 +1780,25 @@ handle("flowplan:notifications-set-enabled", (_event, on) => !!notifier && notif
 handle("flowplan:notifications-refresh", (event) => notifier?.refresh(ownerOf(event.sender.session)?.id), { instance: true });
 handle("flowplan:spelling-add-word", (event, word) => dictionaryWord(word) && event.sender.session.addWordToSpellCheckerDictionary(word), { instance: true });
 handle("flowplan:open-window", (event, url) => void openPageWindow(ownerOf(event.sender.session)?.id, url), { instance: true });
+// "Passkey hinzufügen" → "Im Schlüsselbund (iCloud)": the instance's
+// one-time link in the default browser (guards.js passkeyLinkUrl) – only its
+// own /passkey-add, at most once every two seconds. true when it opened.
+let passkeyLinkAt = 0;
+async function openPasskeyLink(event, url) {
+  if (!passkeyLinkOffered()) return false;
+  const target = passkeyLinkUrl(url, ownerOf(event.sender.session)?.server);
+  if (!target || Date.now() - passkeyLinkAt < 2000) return false;
+  passkeyLinkAt = Date.now();
+  try {
+    await shell.openExternal(target);
+    return true;
+  } catch {
+    const options = { type: "warning", message: t("passkey.browserFailed"), detail: t("passkey.browserFailedDetail") };
+    void (win && !win.isDestroyed() ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options)).catch(() => {});
+    return false;
+  }
+}
+handle("flowplan:add-passkey-in-browser", (event, url) => openPasskeyLink(event, url), { instance: true });
 // The page loads itself again past an outdated copy (#182, web-cache.js):
 // the HTTP and code cache of its own session go first – nothing else.
 const clearAllowed = webCache.createLimiter();

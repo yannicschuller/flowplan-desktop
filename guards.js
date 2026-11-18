@@ -169,7 +169,30 @@ const opensOwnWindow = (disposition) => OWN_WINDOW_DISPOSITIONS.includes(disposi
 function dictionaryWord(value) {
   return typeof value === "string" && /^\p{L}[\p{L}\p{M}'’-]{0,63}$/u.test(value) && !/['’-]$/.test(value);
 }
+// "Passkey hinzufügen" → "Im Schlüsselbund (iCloud)" (Flowplan's
+// lib/app-passkey.ts): the one-time link the page got from its instance,
+// opened in the default browser so the passkey lands in the iCloud Keychain
+// (or the browser's password manager). Only /passkey-add?token=… of the
+// profile's own instance – https, or http on loopback like the instance
+// itself (instanceOrigin) – and nothing else in it: no other path, no
+// callback, no user info, no fragment. Returns the address to open, or null.
+function passkeyLinkUrl(value, origin) {
+  const own = instanceOrigin(origin);
+  if (!own || typeof value !== "string" || value.length > 500) return null;
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if (url.origin !== own || url.username || url.password || url.hash || url.pathname !== "/passkey-add") return null;
+  const keys = [...url.searchParams.keys()];
+  const token = url.searchParams.get("token") || "";
+  if (keys.length !== 1 || keys[0] !== "token" || !/^[A-Za-z0-9_-]{43}$/.test(token)) return null;
+  return `${own}/passkey-add?token=${token}`;
+}
 module.exports = {
+  passkeyLinkUrl,
   instanceOrigin,
   externalUrl,
   instancePageUrl,

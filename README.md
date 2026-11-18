@@ -236,6 +236,17 @@ macOS and Windows register the link type when the app is installed.
 
 The code is valid for one minute, works once and only together with the secret that never leaves the app – a link caught elsewhere is useless, and the app ignores codes for sign-ins it did not start or for another instance. E-mail and password sign in directly in the app. This needs a Flowplan server newer than 0.3.2.
 
+### Adding a passkey to the iCloud Keychain (macOS)
+
+On a Mac, **Einstellungen → Konto → Passkeys → Passkey hinzufügen** offers **Im Schlüsselbund (iCloud)** / **In the Keychain (iCloud)** – the default – and, where [Touch ID](#passkeys-with-touch-id-on-macos) runs in the window, **Nur in dieser App (Touch ID)** / **Only in this app (Touch ID)**. A passkey in the Keychain works in Safari, on the iPhone and on other Macs too; one made with Touch ID in the app stays in this app on this Mac.
+
+1. The page asks its instance for a one-time link (`POST /api/auth/passkey-app-link`, Flowplan's `lib/app-passkey.ts`): valid five minutes, once, only for registering one passkey of the signed-in account – no session.
+2. It calls `window.FlowplanDesktop.addPasskeyInBrowser(url)` ([`preload.js`](preload.js)). The app ([`main.js`](main.js), [`guards.js`](guards.js) `passkeyLinkUrl`) opens it in the default browser only if it is `/passkey-add?token=…` of the calling window's own instance (https, or http on loopback like the instance itself) and nothing else, at most once every two seconds; otherwise it answers `false`. If the browser does not open, a dialog says so.
+3. The browser creates the passkey ("Passkey · Mac") and says to close the window – there is no way back into the app, and none is needed.
+4. The app's window asks the instance every two seconds whether the link was used and lists the passkeys (`POST /api/auth/passkey-app-status`, for its own account only) until the new passkey is there, the link is gone, or **Abbrechen** / **Cancel**.
+
+The bridge method exists on macOS only (`FLOWPLAN_PASSKEY_LINK=1` or `0` decides on any system, used by [`test/passkeys.mjs`](test/passkeys.mjs)); without it – Windows, Linux, older apps – the settings keep their way. This needs a Flowplan server newer than 0.10.1 and a desktop app newer than 1.3.11.
+
 ### Passkeys with Touch ID on macOS
 
 Prepared, and **off until the maintainer adds a provisioning profile** (#356). Electron 45 has a platform authenticator of its own on the Mac (`app.configureWebAuthn({ touchID })`): passkeys created in the app window live in the Mac's keychain, bound to its Secure Enclave, and are unlocked with Touch ID – the window then signs in with passkeys the way it does on Windows (`window.FlowplanDesktop.passkeys = "window"`, the instance's own passkey button, **Im Browser anmelden** / **Sign in in the browser** when the prompt is cancelled or fails).

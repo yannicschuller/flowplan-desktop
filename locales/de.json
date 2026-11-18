@@ -358,6 +358,8 @@
   "passkey.chooseDetail": "Für {0} sind mehrere Passkeys gespeichert. Mit welchem möchtest du dich anmelden?",
   "passkey.unnamed": "Passkey ohne Namen",
   "passkey.touchIdReason": "deinen Passkey für $1 zu verwenden",
+  "passkey.browserFailed": "Der Browser ließ sich nicht öffnen",
+  "passkey.browserFailedDetail": "Für „Passkey hinzufügen“ öffnet Flowplan deinen Standardbrowser. Prüfe in den Systemeinstellungen, ob einer eingestellt ist, und versuche es noch einmal.",
   "setup.title": "Flowplan einrichten",
   "setup.heading": "Willkommen bei Flowplan",
   "setup.text": "Verbinde dich mit app.flowplan.org oder gib die Adresse deiner eigenen Flowplan-Instanz ein. Weitere Instanzen fügst du später im Menü unter „Profile“ hinzu.",

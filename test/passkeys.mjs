@@ -45,12 +45,13 @@ async function windowWith(app, test, timeout = 15000) {
 const instance = await standIn();
 // Onboarding done: no setup step or hint in the way.
 const onboarding = { setupDone: true, hintShown: true, hintDismissed: true };
-async function launch(way) {
+async function launch(way, link = "0") {
   const dir = mkdtempSync(join(tmpdir(), "flowplan-passkeys-"));
   writeFileSync(join(dir, "config.json"), JSON.stringify({ profiles: [{ id: "a1", name: "Work", server: instance.origin }], activeProfile: "a1", onboarding }));
   const env = { ...process.env, XDG_CONFIG_HOME: join(dir, "xdg"), FLOWPLAN_HINT_DELAY: "600000" };
   delete env.FLOWPLAN_PASSKEYS;
   if (way) env.FLOWPLAN_PASSKEYS = way;
+  env.FLOWPLAN_PASSKEY_LINK = link;
   const app = await electron.launch({
     executablePath,
     args: [...(packaged ? [] : ["."]), `--user-data-dir=${dir}`],
@@ -191,6 +192,41 @@ for (const way of [undefined, "browser"]) {
   assert.ok(url.startsWith(`${instance.origin}/api/auth/desktop?challenge=`), url);
   await cancelWaiting(app);
   assert.equal(await chooseAccount(app, instance.origin, [{ credentialId: "a" }, { credentialId: "b" }]), "no listener", "no account choice of the app's own");
+  await app.close();
+}
+
+// ---- macOS: "Passkey hinzufügen" in the default browser (iCloud Keychain) ----
+{
+  const { app, main } = await launch("window", "1");
+  assert.equal(await main.evaluate(() => typeof window.FlowplanDesktop.addPasskeyInBrowser), "function", "the bridge offers the browser way");
+  const token = "A".repeat(40) + "b_-";
+  const link = `${instance.origin}/passkey-add?token=${token}`;
+  assert.equal(await main.evaluate((url) => window.FlowplanDesktop.addPasskeyInBrowser(url), link), true);
+  assert.deepEqual(await opened(app), [link], "the instance's own link went to the browser");
+  // Anything else does not.
+  await sleep(2100);
+  for (const bad of [`https://evil.example/passkey-add?token=${token}`, `${instance.origin}/login?token=${token}`, `${link}&return=flowplan://passkey`, "javascript:alert(1)"])
+    assert.equal(await main.evaluate((url) => window.FlowplanDesktop.addPasskeyInBrowser(url), bad), false, bad);
+  // Not twice in a row within two seconds.
+  assert.equal(await main.evaluate((url) => window.FlowplanDesktop.addPasskeyInBrowser(url), link), true);
+  assert.equal(await main.evaluate((url) => window.FlowplanDesktop.addPasskeyInBrowser(url), link), false);
+  assert.deepEqual(await opened(app), [link, link]);
+  // The browser does not open: the app says so.
+  await sleep(2100);
+  await app.evaluate(({ shell }) => {
+    shell.openExternal = async () => {
+      throw new Error("no default browser");
+    };
+  });
+  assert.equal(await main.evaluate((url) => window.FlowplanDesktop.addPasskeyInBrowser(url), link), false);
+  const [shown] = await until(async () => ((await dialogs(app)).length ? dialogs(app) : null), "the dialog");
+  assert.equal(shown.message, "The browser could not be opened");
+  await app.close();
+}
+// Elsewhere (and switched off) the bridge has no such method: the page keeps its way.
+{
+  const { app, main } = await launch("browser", "0");
+  assert.equal(await main.evaluate(() => typeof window.FlowplanDesktop.addPasskeyInBrowser), "undefined");
   await app.close();
 }
 

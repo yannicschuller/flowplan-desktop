@@ -35,7 +35,7 @@ const screenRules = require("../screen-capture.js");
 const guards = require("../guards.js");
 const systemAudio = require("../system-audio.js");
 // sign-in.js needs Electron only once its sign-in is set up.
-const { passkeyWay, chooseWebAuthnAccount, touchIdGroup, enableTouchId } = require("../sign-in.js");
+const { passkeyWay, passkeyLinkOffered, chooseWebAuthnAccount, touchIdGroup, enableTouchId } = require("../sign-in.js");
 strings.setLocale("en");
 const { t } = strings;
 const server = "https://flowplan.example.com";
@@ -835,6 +835,12 @@ const server = "https://flowplan.example.com";
   assert.equal(passkeyWay({ platform: "linux", env: { FLOWPLAN_PASSKEYS: "Window" } }), "window");
   assert.equal(passkeyWay({ platform: "win32", env: { FLOWPLAN_PASSKEYS: "browser" } }), "browser");
   assert.equal(passkeyWay({ platform: "win32", env: { FLOWPLAN_PASSKEYS: "elsewhere" } }), "window", "anything else: the platform decides");
+  // "Passkey hinzufügen" in the default browser (the iCloud Keychain): on macOS.
+  assert.equal(passkeyLinkOffered({ platform: "darwin", env: {} }), true);
+  assert.equal(passkeyLinkOffered({ platform: "win32", env: {} }), false);
+  assert.equal(passkeyLinkOffered({ platform: "linux", env: {} }), false);
+  assert.equal(passkeyLinkOffered({ platform: "linux", env: { FLOWPLAN_PASSKEY_LINK: "1" } }), true);
+  assert.equal(passkeyLinkOffered({ platform: "darwin", env: { FLOWPLAN_PASSKEY_LINK: "0" } }), false);
   const accounts = [{ credentialId: "one", name: "alex@example.org" }, { credentialId: "two", displayName: "Alex" }, { credentialId: "three" }, { name: "no id" }];
   const asked = [];
   const ask = (answer) => async (labels) => (asked.push(labels), answer);

@@ -358,6 +358,8 @@
   "passkey.chooseDetail": "Passkeys in the window (Windows, sign-in.js): several passkeys for one instance",
   "passkey.unnamed": "Passkeys in the window (Windows, sign-in.js): several passkeys for one instance",
   "passkey.touchIdReason": "Touch ID prompt on macOS (sign-in.js): macOS shows ““Flowplan” is trying to <this text>” (German: „‚Flowplan‘ versucht, <this text>.“) – a lowercase sentence fragment without a final period; $1 is the instance's host",
+  "passkey.browserFailed": "Dialog when “Add a passkey” cannot open the default browser (main.js, macOS)",
+  "passkey.browserFailedDetail": "Dialog when “Add a passkey” cannot open the default browser (main.js, macOS): the detail line",
   "setup.title": "Setup page (pages/setup.html)",
   "setup.heading": "Setup page (pages/setup.html)",
   "setup.text": "Setup page (pages/setup.html)",

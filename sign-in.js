@@ -227,6 +227,16 @@ function passkeyWay({ platform = process.platform, env = process.env, touchID = 
   if (platform === "win32") return "window";
   return platform === "darwin" && touchID === true ? "window" : "browser";
 }
+// "Passkey hinzufügen" through the default browser (guards.js
+// passkeyLinkUrl): offered on macOS, where the browser keeps passkeys in the
+// iCloud Keychain – usable in Safari, on the iPhone, everywhere – rather
+// than only this app's Touch ID. FLOWPLAN_PASSKEY_LINK=1|0 decides instead
+// (the tests).
+function passkeyLinkOffered({ platform = process.platform, env = process.env } = {}) {
+  const wanted = String(env.FLOWPLAN_PASSKEY_LINK || "");
+  if (wanted === "1" || wanted === "0") return wanted === "1";
+  return platform === "darwin";
+}
 // Several passkeys for the instance on one authenticator (Chromium's own
 // account choice – Windows shows its own): one is taken, from several the
 // person picks one (ask(labels) → index, or -1). Only for a page of the
@@ -255,4 +265,4 @@ function sameOrigin(url, origin) {
     return false;
   }
 }
-module.exports = { setupBrowserSignIn, isSignInLink, passkeyWay, chooseWebAuthnAccount, touchIdGroup, enableTouchId };
+module.exports = { setupBrowserSignIn, isSignInLink, passkeyWay, passkeyLinkOffered, chooseWebAuthnAccount, touchIdGroup, enableTouchId };

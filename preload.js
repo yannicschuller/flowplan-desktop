@@ -19,7 +19,8 @@
 //   sign-in form gets this computer's key for the instance (deviceKey,
 //   device-key.js), so a password sign-in lasts as long as the app's, and
 //   learns whether passkeys sign in right here (Windows) or in the browser
-//   (passkeys, sign-in.js); "Im Marketplace veröffentlichen …" opens the
+//   (passkeys, sign-in.js), and on macOS opens "Passkey hinzufügen" in the
+//   default browser (addPasskeyInBrowser, the iCloud Keychain); "Im Marketplace veröffentlichen …" opens the
 //   marketplace in a window of the app (armMarketplaceWindow,
 //   marketplace-window.js); meeting notes learn whether this computer can
 //   record its own audio (systemAudio) and arm the window's next
@@ -170,6 +171,12 @@ else if (instance && (location.protocol === "https:" || location.protocol === "h
     },
     // A page of this instance in a window of its own.
     openWindow: (url) => void ipcRenderer.invoke("flowplan:open-window", String(url || "")).catch(() => {}),
+    // "Passkey hinzufügen" → "Im Schlüsselbund (iCloud)" (macOS): the
+    // instance's one-time link in the default browser; true when it opened
+    // (main.js checks it is this instance's /passkey-add).
+    ...(argument("flowplan-passkey-link") === "1"
+      ? { addPasskeyInBrowser: (url) => ipcRenderer.invoke("flowplan:add-passkey-in-browser", String(url || "")).then((opened) => opened === true, () => false) }
+      : {}),
     // Back and forward (#125): the page says whether there is a step back
     // or forward (the menu items), and goes when the app says so – the menu
     // items "Back" and "Forward", the trackpad's swipe, the mouse's side
