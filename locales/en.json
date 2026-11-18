@@ -362,7 +362,7 @@
   "setup.heading": "Welcome to Flowplan",
   "setup.text": "Connect to app.flowplan.org or enter the address of your own Flowplan instance. You can add more instances later in the menu under “Profiles”.",
   "setup.label": "Address of the instance",
-  "setup.placeholder": "flowplan.your-company.com",
+  "setup.placeholder": "https://flowplan.your-company.com",
   "setup.connect": "Connect",
   "setup.connecting": "Connecting…",
   "setup.nameLabel": "Name of the profile (optional)",

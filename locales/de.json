@@ -362,7 +362,7 @@
   "setup.heading": "Willkommen bei Flowplan",
   "setup.text": "Verbinde dich mit app.flowplan.org oder gib die Adresse deiner eigenen Flowplan-Instanz ein. Weitere Instanzen fügst du später im Menü unter „Profile“ hinzu.",
   "setup.label": "Adresse der Instanz",
-  "setup.placeholder": "flowplan.deine-firma.de",
+  "setup.placeholder": "https://flowplan.deine-firma.de",
   "setup.connect": "Verbinden",
   "setup.connecting": "Verbinde …",
   "setup.nameLabel": "Name des Profils (optional)",

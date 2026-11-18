@@ -362,7 +362,7 @@
   "setup.heading": "欢迎使用 Flowplan",
   "setup.text": "连接到 app.flowplan.org，或输入你自己的 Flowplan 实例地址。以后可以在菜单的“账户”下添加更多实例。",
   "setup.label": "实例地址",
-  "setup.placeholder": "flowplan.your-company.com",
+  "setup.placeholder": "https://flowplan.your-company.com",
   "setup.connect": "连接",
   "setup.connecting": "正在连接…",
   "setup.nameLabel": "账户名称（可选）",
