@@ -19,8 +19,11 @@
 // sign-in page then offers its own passkey button and, should the prompt
 // fail or be cancelled, "Im Browser anmelden" – the link to
 // /api/auth/desktop, which still goes through the browser. On macOS
-// Electron reaches neither iCloud Keychain nor a password manager, and Linux
-// has no platform authenticator: there passkeys keep going to the browser.
+// Electron reaches neither iCloud Keychain nor a password manager; a build
+// entitled for Touch ID (#356, enableTouchId below) keeps passkeys of its
+// own in the window, the same way as on Windows, every other Mac build sends
+// them to the browser. Linux has no platform authenticator: there passkeys
+// keep going to the browser.
 // SSO goes to the browser everywhere.
 const { app, shell, dialog, BrowserWindow, nativeTheme } = require("electron");
 const { createHash, randomBytes } = require("node:crypto");
@@ -186,13 +189,43 @@ function setupBrowserSignIn({ server, getWindow, preload, locale = () => "en" })
     pendingCount: () => pending.size,
   };
 }
-// Where passkeys are used: "window" on Windows, "browser" elsewhere.
+// Touch ID on macOS (#356): Electron's own platform authenticator keeps
+// passkeys in the Mac's keychain, bound to its Secure Enclave – but only in
+// an app signed with the restricted entitlement keychain-access-groups,
+// which needs an embedded Developer ID provisioning profile. The release
+// workflow embeds one only when the secret MAC_PROVISIONING_PROFILE exists
+// and then names the keychain group in build/update.json ("touchID");
+// without it the file has no such key and nothing here changes.
+const TOUCH_ID_GROUP = /^[A-Z0-9]{10}\.app\.flowplan\.desktop\.webauthn$/;
+function touchIdGroup(info) {
+  const group = info && typeof info === "object" ? info.touchID : undefined;
+  return typeof group === "string" && TOUCH_ID_GROUP.test(group) ? group : null;
+}
+let touchIdEnabled = false;
+// Called once the app is ready: switches Touch ID on for the window on a
+// Mac whose build is entitled. Remembers whether Electron took it; any
+// error leaves passkeys in the browser, as before.
+function enableTouchId({ app, platform = process.platform, info, promptReason }) {
+  touchIdEnabled = false;
+  const group = touchIdGroup(info);
+  if (platform !== "darwin" || !group || typeof app?.configureWebAuthn !== "function") return false;
+  try {
+    app.configureWebAuthn({ touchID: { keychainAccessGroup: group, ...(promptReason ? { promptReason } : {}) } });
+    touchIdEnabled = true;
+  } catch (error) {
+    console.warn(`Touch ID for passkeys is unavailable: ${error?.message || error}`);
+  }
+  return touchIdEnabled;
+}
+// Where passkeys are used: "window" on Windows and on a Mac where Touch ID
+// was switched on (enableTouchId), "browser" elsewhere.
 // FLOWPLAN_PASSKEYS=window|browser decides instead (the tests; trying the
 // window elsewhere, e.g. with a security key on Linux).
-function passkeyWay({ platform = process.platform, env = process.env } = {}) {
+function passkeyWay({ platform = process.platform, env = process.env, touchID = touchIdEnabled } = {}) {
   const wanted = String(env.FLOWPLAN_PASSKEYS || "").toLowerCase();
   if (wanted === "window" || wanted === "browser") return wanted;
-  return platform === "win32" ? "window" : "browser";
+  if (platform === "win32") return "window";
+  return platform === "darwin" && touchID === true ? "window" : "browser";
 }
 // Several passkeys for the instance on one authenticator (Chromium's own
 // account choice – Windows shows its own): one is taken, from several the
@@ -222,4 +255,4 @@ function sameOrigin(url, origin) {
     return false;
   }
 }
-module.exports = { setupBrowserSignIn, isSignInLink, passkeyWay, chooseWebAuthnAccount };
+module.exports = { setupBrowserSignIn, isSignInLink, passkeyWay, chooseWebAuthnAccount, touchIdGroup, enableTouchId };

@@ -86,7 +86,7 @@ Windows and Linux keep their behaviour: closing the window quits the app, so not
 
 The window offers the page it shows to your iPad and iPhone (and other Macs) – same Apple Account, Handoff on in the system settings: the Flowplan icon in the iPad's Dock or app switcher opens the page in the Flowplan app, without the app the device's browser opens it. The other way round, a page open in the iPad or iPhone app appears on the Mac's Dock and opens here – in the profile of its instance (the window switches profile like a clicked notification); pages of an instance without a profile open in the browser. Only pages of the profile's own instance are offered, never the app's own pages or `/api/` addresses ([`handoff.js`](handoff.js), activity type `app.flowplan.page`, declared under `NSUserActivityTypes` in `package.json` → `build.mac.extendInfo`).
 
-Handoff works only between apps of the **same Apple Developer team**: the signed releases (Developer ID of team `V7N2K54KJN`, the team of the iOS app) – not `npm start` or unsigned builds. Should macOS not offer the app's pages although both are signed, add a Developer ID provisioning profile for `app.flowplan.desktop` (`mac.provisioningProfile`) and the entitlements `com.apple.application-identifier` = `V7N2K54KJN.app.flowplan.desktop` and `com.apple.developer.team-identifier` = `V7N2K54KJN` to `build/entitlements.mac.plist`.
+Handoff works only between apps of the **same Apple Developer team**: the signed releases (Developer ID of team `V7N2K54KJN`, the team of the iOS app) – not `npm start` or unsigned builds. Should macOS not offer the app's pages although both are signed, add a Developer ID provisioning profile for `app.flowplan.desktop` (`mac.provisioningProfile`) and the entitlements `com.apple.application-identifier` = `V7N2K54KJN.app.flowplan.desktop` and `com.apple.developer.team-identifier` = `V7N2K54KJN` to `build/entitlements.mac.plist` – the [Touch ID profile](#passkeys-with-touch-id-on-macos) (`MAC_PROVISIONING_PROFILE`) brings exactly these with it.
 
 ## Right-click menu and spelling
 
@@ -218,6 +218,8 @@ For development on a Mac, `swift build -c release` in `native/device-ai` makes t
 
 **On Windows, passkeys sign in right in the app window.** Chromium hands WebAuthn to Windows' own API there, so **Mit Passkey anmelden** / **Sign in with a passkey** opens the native Windows Hello prompt (face, fingerprint, PIN, a security key or a phone) over the app – for the instance's own origin, as in a browser. The app says so to the instance's pages (`window.FlowplanDesktop.passkeys = "window"`, [`preload.js`](preload.js)); if Chromium itself asks which of several passkeys to use, the app shows a small dialog. Is the prompt cancelled or does it fail, the sign-in page offers **Im Browser anmelden** / **Sign in in the browser** – the browser hand-off below. Adding a passkey in the settings also works in the window. This needs a Flowplan server newer than 0.8.13; older servers keep handing passkeys to the browser. `FLOWPLAN_PASSKEYS=window` or `browser` picks the way on any system (used by [`test/passkeys.mjs`](test/passkeys.mjs)).
 
+On a Mac, a release built with a provisioning profile can keep passkeys of its own in the window with Touch ID – see [Passkeys with Touch ID on macOS](#passkeys-with-touch-id-on-macos); until then the Mac works like Linux below.
+
 On macOS and Linux, passkeys (iCloud Keychain, password managers) and – on every system – identity providers that ask for one only work in a real browser. In the app, **Mit Passkey anmelden** and **Mit SSO anmelden** therefore open the sign-in in the default browser:
 
 1. The app creates a random secret and opens the instance with its hash (`/api/auth/desktop`). A small window **Weiter im Browser** / **Continue in the browser** waits in the app.
@@ -233,6 +235,46 @@ xdg-mime default flowplan.desktop x-scheme-handler/flowplan
 macOS and Windows register the link type when the app is installed.
 
 The code is valid for one minute, works once and only together with the secret that never leaves the app – a link caught elsewhere is useless, and the app ignores codes for sign-ins it did not start or for another instance. E-mail and password sign in directly in the app. This needs a Flowplan server newer than 0.3.2.
+
+### Passkeys with Touch ID on macOS
+
+Prepared, and **off until the maintainer adds a provisioning profile** (#356). Electron 45 has a platform authenticator of its own on the Mac (`app.configureWebAuthn({ touchID })`): passkeys created in the app window live in the Mac's keychain, bound to its Secure Enclave, and are unlocked with Touch ID – the window then signs in with passkeys the way it does on Windows (`window.FlowplanDesktop.passkeys = "window"`, the instance's own passkey button, **Im Browser anmelden** / **Sign in in the browser** when the prompt is cancelled or fails).
+
+What these passkeys are:
+
+- **Device-bound and app-only.** A passkey added in the app exists on this Mac, in this app – not in iCloud Keychain, not in Safari or another browser, not on the iPhone, and not on another Mac. Passkeys saved in iCloud Keychain or a password manager stay unreachable for the app (that would need Apple's associated domains, which cannot list every self-hosted instance); they keep working through **Im Browser anmelden**.
+- **One per profile.** Electron keeps them per session, so each profile (instance) has its own.
+- **Touch ID / Secure Enclave needed**: Apple silicon, or an Intel Mac with a T2 chip. Without one, `PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()` is `false` in the window and the sign-in falls back to the browser.
+- Removing the app does not remove them from the keychain; removing them in the instance's settings makes them useless.
+
+How it switches on – nothing changes before all of this holds:
+
+1. The release workflow finds the secret `MAC_PROVISIONING_PROFILE` (and the build is signed: `CSC_LINK`, `APPLE_TEAM_ID`). Without it the step **Touch ID for passkeys** ends at once: the app is signed with `build/entitlements.mac.plist` alone, no profile is embedded, `build/update.json` is the same as before.
+2. With it, [`scripts/touchid.mjs`](scripts/touchid.mjs) checks the profile (Developer ID, not expired, App ID `<TEAM_ID>.app.flowplan.desktop`, the team, `keychain-access-groups` covering `<TEAM_ID>.app.flowplan.desktop.webauthn`) and stops the build if it does not fit – an app whose entitlements its profile does not cover does not launch. It writes the main app's entitlements (`build/entitlements.mac.plist` plus `keychain-access-groups`, `com.apple.application-identifier`, `com.apple.developer.team-identifier`; the helpers keep `entitlementsInherit`) and names the keychain group in `build/update.json` (`"touchID"`). electron-builder embeds the profile (`-c.mac.provisioningProfile`, `-c.mac.entitlements`); a check after the build looks for the profile, the group in the app's entitlements and none in the helpers.
+3. The app (`sign-in.js`) calls `app.configureWebAuthn` once it is ready – only on macOS, only when `build/update.json` names the group, inside `try`/`catch` – with a prompt in the app's language (“Flowplan” is trying to use your passkey for example.org). Only when that call succeeds do passkeys stay in the window; `FLOWPLAN_PASSKEYS=browser` still sends them to the browser. Unsigned builds and `npm start` never have the key.
+
+**Steps for the maintainer** (Apple Developer account of team `V7N2K54KJN`, the one that signs the releases):
+
+1. [developer.apple.com](https://developer.apple.com/account/resources/identifiers/list) → Certificates, Identifiers & Profiles → **Identifiers**: open the App ID `app.flowplan.desktop` (or create it: App IDs → App, Bundle ID *Explicit* `app.flowplan.desktop`), tick **Keychain Sharing** under Capabilities and **Save**.
+2. **Profiles → +** → under *Distribution* **Developer ID** → App ID `app.flowplan.desktop` → the **Developer ID Application** certificate that `CSC_LINK` holds → name it (e.g. *Flowplan Desktop Developer ID*) → **Generate** and download the `.provisionprofile`.
+3. Check it on a Mac: `security cms -D -i Flowplan_Desktop_Developer_ID.provisionprofile | plutil -extract Entitlements xml1 -o - -` should list `com.apple.application-identifier` = `V7N2K54KJN.app.flowplan.desktop` and `keychain-access-groups` with `V7N2K54KJN.*`.
+4. `base64 -i Flowplan_Desktop_Developer_ID.provisionprofile | pbcopy` → repository secret **`MAC_PROVISIONING_PROFILE`** (Settings → Secrets and variables → Actions). `APPLE_TEAM_ID` must be `V7N2K54KJN`.
+5. Run **Actions → Release**. The step *Touch ID for passkeys* prints the profile's name and expiry and the keychain group; the check after the build prints *Touch ID: profile embedded*.
+6. The profile expires with the Developer ID certificate: renew both together (new profile → new secret). Removing the secret switches Touch ID off again with the next release (passkeys created in the app then stop working there; the browser sign-in remains).
+
+**Device test** (a Mac with Touch ID, the release built with the profile, an instance newer than 0.8.13):
+
+- [ ] The app launches from the DMG and after an update from the previous version (no “cannot be opened” – that would be a profile/entitlement mismatch); `spctl -a -vv /Applications/Flowplan.app` says `accepted, source=Notarized Developer ID`.
+- [ ] `codesign -d --entitlements - /Applications/Flowplan.app` lists `keychain-access-groups` `V7N2K54KJN.app.flowplan.desktop.webauthn`; `Contents/embedded.provisionprofile` exists.
+- [ ] The sign-in page shows the instance's own **Mit Passkey anmelden** button, not the hand-off link (`window.FlowplanDesktop.passkeys` is `"window"` in the developer tools).
+- [ ] Settings → add a passkey: the Touch ID prompt says “Flowplan” is trying to use your passkey for *host* (German system: … deinen Passkey für *host* zu verwenden); the passkey appears in the instance's list.
+- [ ] Sign out, **Mit Passkey anmelden** → Touch ID → signed in; nothing opened in the browser.
+- [ ] Cancel the Touch ID prompt → error and **Im Browser anmelden**, which opens the browser hand-off and signs in.
+- [ ] Two accounts with passkeys on the same instance: the app asks which one (dialog).
+- [ ] A second profile (another instance) does not see the first profile's passkeys.
+- [ ] Quit and relaunch: the passkey still works. Sign in with e-mail and password and with SSO still works.
+- [ ] A Mac without Touch ID (Intel without T2, or Touch ID off in a VM): the sign-in falls back to the browser.
+- [ ] A release without the secret: the app behaves as before (passkeys in the browser).
 
 ### How long the app stays signed in
 
@@ -264,6 +306,7 @@ Releases are unsigned until the repository has these secrets (Settings → Secre
 | `CSC_LINK`, `CSC_KEY_PASSWORD` | macOS: Developer ID Application certificate (`.p12`, base64 or a URL) and its password |
 | `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | macOS notarization |
 | `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD` | Windows code signing certificate |
+| `MAC_PROVISIONING_PROFILE` | optional: macOS Developer ID provisioning profile with Keychain Sharing (base64) – [Touch ID for passkeys](#passkeys-with-touch-id-on-macos) |
 
 With `CSC_LINK` set, the release workflow marks the macOS app as signed (`build/update.json`) and it updates itself like on Windows. The workflow imports the certificate into a keychain of its own and passes it to electron-builder by name (`CSC_KEYCHAIN`, `CSC_NAME`); the official macOS releases are signed and notarized from 1.0.6 on.
 

@@ -8,7 +8,8 @@
 // through the browser. Several passkeys from Chromium's own account choice
 // are picked in a dialog, only for the instance. On macOS and Linux
 // (FLOWPLAN_PASSKEYS=browser, the default there) passkeys stay in the
-// browser as before. The stand-in's /login follows components/login.tsx.
+// browser as before – a Mac build entitled for Touch ID (#356) takes the
+// Windows way; when, is tested in test/features.mjs. The stand-in's /login follows components/login.tsx.
 // Usage: node test/passkeys.mjs (Linux without a display: xvfb-run)
 import { _electron as electron } from "playwright";
 import { mkdtempSync, writeFileSync } from "node:fs";

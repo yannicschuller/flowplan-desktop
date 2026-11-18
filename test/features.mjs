@@ -35,7 +35,7 @@ const screenRules = require("../screen-capture.js");
 const guards = require("../guards.js");
 const systemAudio = require("../system-audio.js");
 // sign-in.js needs Electron only once its sign-in is set up.
-const { passkeyWay, chooseWebAuthnAccount } = require("../sign-in.js");
+const { passkeyWay, chooseWebAuthnAccount, touchIdGroup, enableTouchId } = require("../sign-in.js");
 strings.setLocale("en");
 const { t } = strings;
 const server = "https://flowplan.example.com";
@@ -847,6 +847,96 @@ const server = "https://flowplan.example.com";
   assert.equal(await chooseWebAuthnAccount({}, { allowed: true, ask: ask(0) }), null);
   assert.equal(asked.length, 2, "one passkey, another site, none: nothing asked");
   console.log("✔ Passkeys im Fenster (Windows) oder im Browser");
+}
+// Touch ID on macOS (#356): off until the release embeds a provisioning
+// profile. Only a build whose build/update.json names the keychain group,
+// on a Mac, where Electron took configureWebAuthn, signs in in the window.
+{
+  const group = "ABCDE12345.app.flowplan.desktop.webauthn";
+  // The repository's own build info: no Touch ID (the workflow adds it).
+  const repoInfo = JSON.parse(readFileSync(new URL("../build/update.json", import.meta.url), "utf8"));
+  assert.equal(repoInfo.touchID, undefined, "build/update.json in the repository names no keychain group");
+  assert.equal(touchIdGroup(repoInfo), null);
+  assert.equal(touchIdGroup({ touchID: group }), group);
+  for (const bad of [undefined, null, "", true, "ABCDE12345.app.flowplan.desktop", "abcde12345.app.flowplan.desktop.webauthn", "ABCDE12345.com.example.webauthn", `${group}\n`])
+    assert.equal(touchIdGroup({ touchID: bad }), null, `not a keychain group: ${JSON.stringify(bad)}`);
+  assert.equal(touchIdGroup(null), null);
+
+  const fakeApp = (fails) => {
+    const calls = [];
+    return { calls, configureWebAuthn: (options) => { calls.push(options); if (fails) throw new Error("no entitlement"); } };
+  };
+  // Not entitled, not a Mac, no such API: nothing is called, the browser stays.
+  for (const [platform, info] of [["darwin", repoInfo], ["darwin", {}], ["linux", { touchID: group }], ["win32", { touchID: group }]]) {
+    const mac = fakeApp(false);
+    assert.equal(enableTouchId({ app: mac, platform, info, promptReason: "use your passkey for $1" }), false, `${platform} ${JSON.stringify(info)}`);
+    assert.deepEqual(mac.calls, [], `${platform}: configureWebAuthn not called`);
+    assert.equal(passkeyWay({ platform: "darwin", env: {} }), "browser");
+  }
+  assert.equal(enableTouchId({ app: {}, platform: "darwin", info: { touchID: group } }), false, "an Electron without configureWebAuthn");
+  // Entitled Mac: configured with the group and the prompt, remembered.
+  const mac = fakeApp(false);
+  assert.equal(enableTouchId({ app: mac, platform: "darwin", info: { touchID: group }, promptReason: "use your passkey for $1" }), true);
+  assert.deepEqual(mac.calls, [{ touchID: { keychainAccessGroup: group, promptReason: "use your passkey for $1" } }]);
+  assert.equal(passkeyWay({ platform: "darwin", env: {} }), "window", "Touch ID on: the window");
+  assert.equal(passkeyWay({ platform: "linux", env: {} }), "browser", "Linux unchanged");
+  assert.equal(passkeyWay({ platform: "win32", env: {} }), "window", "Windows unchanged");
+  assert.equal(passkeyWay({ platform: "darwin", env: { FLOWPLAN_PASSKEYS: "browser" } }), "browser", "the override still wins");
+  // configureWebAuthn throws (e.g. the entitlement missing): the browser.
+  const refusing = fakeApp(true);
+  const warn = console.warn;
+  console.warn = () => {};
+  assert.equal(enableTouchId({ app: refusing, platform: "darwin", info: { touchID: group }, promptReason: "x" }), false);
+  console.warn = warn;
+  assert.equal(refusing.calls.length, 1);
+  assert.equal(passkeyWay({ platform: "darwin", env: {} }), "browser", "failed: the browser, as before");
+  assert.equal(passkeyWay({ platform: "darwin", env: {}, touchID: true }), "window");
+  assert.equal(passkeyWay({ platform: "darwin", env: {}, touchID: false }), "browser");
+  assert.equal(passkeyWay({ platform: "darwin", env: { FLOWPLAN_PASSKEYS: "window" }, touchID: false }), "window", "the override on a Mac");
+  // The prompt: a lowercase fragment with the relying party, in every language.
+  for (const lang of strings.LOCALES) {
+    strings.setLocale(lang);
+    const reason = strings.t("passkey.touchIdReason");
+    assert.match(reason, /\$1/, `${lang}: names the host`);
+    assert.doesNotMatch(reason, /[.。]$/, `${lang}: no final period`);
+  }
+  strings.setLocale("en");
+
+  // The release workflow's part (scripts/touchid.mjs): the profile checked,
+  // the entitlements of the main app, the keychain group in the build info.
+  const touchid = await import("../scripts/touchid.mjs");
+  const team = "ABCDE12345";
+  assert.equal(touchid.keychainGroup(team), group);
+  const profile = { "com.apple.application-identifier": `${team}.app.flowplan.desktop`, "com.apple.developer.team-identifier": team, "keychain-access-groups": [`${team}.*`] };
+  assert.deepEqual(touchid.profileProblems(profile, team), []);
+  assert.deepEqual(touchid.profileProblems({ ...profile, "keychain-access-groups": [group] }, team), []);
+  assert.equal(touchid.profileProblems({ ...profile, "keychain-access-groups": undefined }, team).length, 1, "no Keychain Sharing");
+  assert.equal(touchid.profileProblems({ ...profile, "keychain-access-groups": ["OTHER12345.*"] }, team).length, 1, "another team's group");
+  assert.equal(touchid.profileProblems({ ...profile, "com.apple.application-identifier": `${team}.com.example.app` }, team).length, 1, "another App ID");
+  assert.equal(touchid.profileProblems({ ...profile, "com.apple.developer.team-identifier": "OTHER12345" }, team).length, 1, "another team");
+  assert.equal(touchid.profileProblems(profile, "").length, 1, "no team id");
+  const base = readFileSync(new URL("../build/entitlements.mac.plist", import.meta.url), "utf8");
+  assert.doesNotMatch(base, /keychain-access-groups|application-identifier|team-identifier/, "the default entitlements: no Touch ID");
+  const entitled = touchid.touchIdEntitlements(base, team);
+  assert.ok(entitled.startsWith(base.slice(0, base.lastIndexOf("  </dict>"))), "the base entitlements kept");
+  assert.match(entitled, new RegExp(`<key>keychain-access-groups</key>\\s*<array>\\s*<string>${group.replace(/\./g, "\\.")}</string>\\s*</array>`));
+  assert.match(entitled, new RegExp(`<key>com\\.apple\\.application-identifier</key>\\s*<string>${team}\\.app\\.flowplan\\.desktop</string>`));
+  assert.match(entitled, new RegExp(`<key>com\\.apple\\.developer\\.team-identifier</key>\\s*<string>${team}</string>`));
+  assert.match(entitled, /<\/dict>\s*<\/plist>\s*$/);
+  assert.throws(() => touchid.touchIdEntitlements(entitled, team), /already/);
+  assert.throws(() => touchid.touchIdEntitlements(base, "not a team"));
+  if (process.platform === "darwin") execFileSync("plutil", ["-lint", "-"], { input: entitled });
+  assert.deepEqual(touchid.withTouchId({ macSigned: true }, team), { macSigned: true, touchID: group });
+  assert.equal(touchIdGroup(touchid.withTouchId({ macSigned: true }, team)), group, "what the workflow writes is what the app reads");
+  // The workflow: the profile and these entitlements only with the secret.
+  const workflow = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
+  assert.match(workflow, /if \[ -z "\$SECRET_MAC_PROVISIONING_PROFILE" \]; then[\s\S]*?exit 0/, "without the secret: nothing");
+  assert.match(workflow, /if \[ "\$RUNNER_OS" = macOS \] && \[ -n "\$\{TOUCHID_PROFILE:-\}" \]; then/, "the profile only when prepared");
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  assert.equal(pkg.build.mac.provisioningProfile, undefined, "no profile in package.json");
+  assert.equal(pkg.build.mac.entitlementsInherit, "build/entitlements.mac.plist", "the helpers keep the default entitlements");
+  assert.ok(!pkg.build.files.some((f) => f.startsWith("scripts")), "the build script stays out of the app");
+  console.log("✔ Touch ID für Passkeys nur mit Provisioning-Profil");
 }
 // The window's browser cache (#182): cleared once after an update of the
 // app, and when the instance's page asks – HTTP and code cache only, never

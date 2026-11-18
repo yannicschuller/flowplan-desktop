@@ -97,6 +97,7 @@ jobs:
   # without certificates; with the secrets CSC_LINK/CSC_KEY_PASSWORD (macOS,
   # plus APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID for
   # notarization) and WIN_CSC_LINK/WIN_CSC_KEY_PASSWORD (Windows) signed.
+  # MAC_PROVISIONING_PROFILE (optional) adds Touch ID for passkeys (#356).
   build:
     needs: version
     strategy:
@@ -135,6 +136,47 @@ jobs:
           SIGNED: ${{ secrets.CSC_LINK != '' }}
         run: |
           printf '{\n  "macSigned": %s\n}\n' "$SIGNED" > build/update.json
+          cat build/update.json
+      # Touch ID for passkeys in the window (optional, #356): only with the
+      # secret MAC_PROVISIONING_PROFILE – a Developer ID provisioning profile
+      # for app.flowplan.desktop with Keychain Sharing, base64 – and a signed
+      # build. scripts/touchid.mjs checks the profile against APPLE_TEAM_ID,
+      # writes the main app's entitlements (keychain-access-groups,
+      # application identifier, team) and names the keychain group in
+      # build/update.json; the Build step embeds the profile. Without the
+      # secret this step changes nothing: build/entitlements.mac.plist, no
+      # profile, passkeys in the browser – exactly as before.
+      - name: Touch ID for passkeys (macOS, optional)
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        env:
+          SECRET_MAC_PROVISIONING_PROFILE: ${{ secrets.MAC_PROVISIONING_PROFILE }}
+          SECRET_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          SIGNED: ${{ secrets.CSC_LINK != '' }}
+        run: |
+          if [ -z "$SECRET_MAC_PROVISIONING_PROFILE" ]; then
+            echo "No MAC_PROVISIONING_PROFILE: built without Touch ID, passkeys go to the browser."
+            exit 0
+          fi
+          team="$(printf '%s' "$SECRET_APPLE_TEAM_ID" | tr -d '[:space:]')"
+          if [ "$SIGNED" != true ] || [ -z "$team" ]; then
+            echo "::warning title=Touch ID::MAC_PROVISIONING_PROFILE needs CSC_LINK and APPLE_TEAM_ID as well – built without Touch ID."
+            exit 0
+          fi
+          profile="$RUNNER_TEMP/flowplan.provisionprofile"
+          printf '%s' "$SECRET_MAC_PROVISIONING_PROFILE" | base64 --decode > "$profile"
+          security cms -D -i "$profile" -o "$RUNNER_TEMP/profile.plist" || { echo "::error title=MAC_PROVISIONING_PROFILE::not a provisioning profile (base64 of the .provisionprofile file)"; exit 1; }
+          # A Developer ID profile provisions every Mac, and an expired one
+          # keeps the app from launching.
+          [ "$(plutil -extract ProvisionsAllDevices raw -o - "$RUNNER_TEMP/profile.plist" 2>/dev/null)" = true ] || { echo "::error title=MAC_PROVISIONING_PROFILE::not a Developer ID profile (ProvisionsAllDevices missing)"; exit 1; }
+          expires="$(plutil -extract ExpirationDate raw -o - "$RUNNER_TEMP/profile.plist")"
+          node -e 'process.exit(Date.parse(process.argv[1]) > Date.now() + 86400000 ? 0 : 1)' "$expires" || { echo "::error title=MAC_PROVISIONING_PROFILE::the profile expired ($expires)"; exit 1; }
+          echo "Profile $(plutil -extract Name raw -o - "$RUNNER_TEMP/profile.plist"), valid until $expires"
+          plutil -extract Entitlements json -o "$RUNNER_TEMP/profile-entitlements.json" "$RUNNER_TEMP/profile.plist"
+          node scripts/touchid.mjs "$team" "$RUNNER_TEMP/profile-entitlements.json" "$RUNNER_TEMP/entitlements.touchid.plist"
+          rm -f "$RUNNER_TEMP/profile.plist" "$RUNNER_TEMP/profile-entitlements.json"
+          echo "TOUCHID_PROFILE=$profile" >> "$GITHUB_ENV"
+          echo "TOUCHID_ENTITLEMENTS=$RUNNER_TEMP/entitlements.touchid.plist" >> "$GITHUB_ENV"
           cat build/update.json
       # Apple Intelligence on the Mac (optional, native/device-ai): a small
       # Swift helper, built universal, signed in the Build step (Developer ID,
@@ -213,7 +255,13 @@ jobs:
               codesign --verify --strict --verbose=2 "$helper"
             fi
           fi
-          npx electron-builder ${{ matrix.target }} --publish never
+          # Touch ID (step above): the profile embedded and the main app's
+          # entitlements – the helpers keep entitlementsInherit.
+          touchid=()
+          if [ "$RUNNER_OS" = macOS ] && [ -n "${TOUCHID_PROFILE:-}" ]; then
+            touchid=("-c.mac.provisioningProfile=$TOUCHID_PROFILE" "-c.mac.entitlements=$TOUCHID_ENTITLEMENTS")
+          fi
+          npx electron-builder ${{ matrix.target }} --publish never "${touchid[@]}"
       - name: Check the Apple Intelligence helper in the app (macOS)
         if: matrix.os == 'macos-latest'
         shell: bash
@@ -238,6 +286,22 @@ jobs:
               printf '%s\n' "$details" | grep -Eq '^CodeDirectory.*flags=.*runtime' || { echo "::error::device-ai lacks the hardened runtime"; exit 1; }
               printf '%s\n' "$details" | grep -q '^Timestamp=' || { echo "::error::device-ai has no secure timestamp"; exit 1; }
               codesign --verify --deep --strict --verbose=2 "$app"
+            fi
+            # Touch ID (#356): the profile embedded, the keychain group in
+            # the app's entitlements alone; without it neither.
+            entitlements="$(codesign -d --entitlements - --xml "$app" 2>/dev/null || true)"
+            if [ -n "${TOUCHID_PROFILE:-}" ]; then
+              cmp -s "$TOUCHID_PROFILE" "$app/Contents/embedded.provisionprofile" || { echo "::error::The provisioning profile is not embedded in $app"; exit 1; }
+              group="$(node -p 'require("./build/update.json").touchID')"
+              printf '%s' "$entitlements" | grep -q "<string>$group</string>" || { echo "::error::$app lacks keychain-access-groups $group"; exit 1; }
+              for helper in "$app"/Contents/Frameworks/*.app "$app/Contents/MacOS/device-ai"; do
+                if codesign -d --entitlements - --xml "$helper" 2>/dev/null | grep -q keychain-access-groups; then echo "::error::$helper must not have keychain-access-groups"; exit 1; fi
+              done
+              echo "Touch ID: profile embedded, keychain group $group"
+            else
+              [ ! -e "$app/Contents/embedded.provisionprofile" ] || { echo "::error::A provisioning profile in $app without MAC_PROVISIONING_PROFILE"; exit 1; }
+              if printf '%s' "$entitlements" | grep -q keychain-access-groups; then echo "::error::keychain-access-groups without MAC_PROVISIONING_PROFILE"; exit 1; fi
+              node -e 'process.exit(require("./build/update.json").touchID === undefined ? 0 : 1)' || { echo "::error::build/update.json names Touch ID without a profile"; exit 1; }
             fi
           done
       - name: Attach to the release

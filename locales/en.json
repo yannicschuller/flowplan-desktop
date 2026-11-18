@@ -357,6 +357,7 @@
   "passkey.choose": "Choose a passkey",
   "passkey.chooseDetail": "Several passkeys are saved for {0}. Which one do you want to sign in with?",
   "passkey.unnamed": "Unnamed passkey",
+  "passkey.touchIdReason": "use your passkey for $1",
   "setup.title": "Set up Flowplan",
   "setup.heading": "Welcome to Flowplan",
   "setup.text": "Connect to app.flowplan.org or enter the address of your own Flowplan instance. You can add more instances later in the menu under “Profiles”.",

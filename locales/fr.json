@@ -357,6 +357,7 @@
   "passkey.choose": "Choisir une clé d'accès",
   "passkey.chooseDetail": "Plusieurs clés d'accès sont enregistrées pour {0}. Avec laquelle voulez-vous vous connecter ?",
   "passkey.unnamed": "Clé d'accès sans nom",
+  "passkey.touchIdReason": "utiliser votre clé d'accès pour $1",
   "setup.title": "Configurer Flowplan",
   "setup.heading": "Bienvenue dans Flowplan",
   "setup.text": "Connectez-vous à app.flowplan.org ou saisissez l'adresse de votre propre instance Flowplan. Vous pourrez ajouter d'autres instances plus tard dans le menu « Profils ».",

@@ -39,6 +39,8 @@ const RELEASES = "github.com/yannicschuller/flowplan-desktop";
 const SIX_HOURS = 6 * 60 * 60 * 1000;
 const TOAST = { width: 380, height: 132, notesHeight: 460, margin: 16 };
 
+// What the release build says about itself (build/update.json): macSigned,
+// and touchID on a Mac build entitled for Touch ID (sign-in.js).
 function buildInfo() {
   try {
     return JSON.parse(fs.readFileSync(path.join(__dirname, "build", "update.json"), "utf8"));
@@ -347,6 +349,7 @@ module.exports = {
   currentView,
   status: () => ({ phase: state.phase, version: state.version }),
   feed,
+  buildInfo,
   sourceLine,
   reduce,
   view,

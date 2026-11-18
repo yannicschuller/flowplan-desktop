@@ -96,7 +96,7 @@ jobs:
       - name: Passkeys (Electron under xvfb)
         # Windows Hello in the window (simulated: WebAuthn against Chromium's
         # virtual authenticator), the fallback to the browser, and macOS/Linux
-        # unchanged.
+        # unchanged. Touch ID on macOS (#356) is tested in test:features.
         run: |
           if command -v xvfb-run > /dev/null; then
             xvfb-run -a npm run test:passkeys

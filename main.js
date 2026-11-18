@@ -40,7 +40,7 @@ const {
 } = require("electron");
 const path = require("node:path");
 const updates = require("./updates");
-const { setupBrowserSignIn, passkeyWay, chooseWebAuthnAccount } = require("./sign-in");
+const { setupBrowserSignIn, passkeyWay, chooseWebAuthnAccount, enableTouchId } = require("./sign-in");
 const { fallbackFor } = require("./fallback");
 const strings = require("./strings");
 const { isOwnPage, isInstancePage, allowedInWindow, isSignInRedirect, permissionAllowed, classifyHealth, defaultPagesDir, sameOrigin: sameOriginAs, instancePageUrl, opensOwnWindow, externalUrl, dictionaryWord, fromWindow } = require("./guards");
@@ -449,9 +449,9 @@ function prepareSession(ses) {
     done(permissionAllowed(permission, details, fromInstance, { systemAudioArmed }));
   });
   ses.setDisplayMediaRequestHandler((request, callback) => answerDisplayMedia(ses, request, callback));
-  // Passkeys in the window (Windows, sign-in.js): when Chromium itself asks
-  // which of several passkeys to use, the person picks one in a dialog – for
-  // a page of the active profile's own instance only.
+  // Passkeys in the window (Windows, Touch ID on macOS, sign-in.js): when
+  // Chromium itself asks which of several passkeys to use, the person picks
+  // one in a dialog – for a page of the active profile's own instance only.
   if (passkeyWay() === "window")
     ses.on("select-webauthn-account", (_event, details, callback) => {
       const owner = ownerOf(ses);
@@ -1871,6 +1871,10 @@ else {
   if (process.platform === "win32") app.setAppUserModelId("app.flowplan.desktop");
   app.whenReady().then(() => {
     strings.setLocale(app.getLocale());
+    // Touch ID for passkeys in the window (#356, sign-in.js): only a Mac
+    // build with the keychain entitlement (build/update.json "touchID"),
+    // before any session is prepared or window opened.
+    enableTouchId({ app, info: updates.buildInfo(), promptReason: t("passkey.touchIdReason") });
     // A single address of an older version becomes the first profile.
     const config = readConfig();
     state = profiles.loadProfiles(config);
