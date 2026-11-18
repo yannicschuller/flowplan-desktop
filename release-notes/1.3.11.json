@@ -1,0 +1,10 @@
+{
+  "features": [
+    {
+      "de": "Passkeys mit Touch ID auf dem Mac: Im Fenster der App legst du einen Passkey jetzt mit Touch ID an und meldest dich damit an – ohne Umweg über den Browser. Diese Passkeys gelten nur in der App auf diesem Mac; Passkeys aus dem iCloud-Schlüsselbund nutzt du weiter über „Im Browser anmelden“.",
+      "en": "Passkeys with Touch ID on the Mac: in the app's window you now add a passkey with Touch ID and sign in with it – without going through the browser. These passkeys work only in the app on this Mac; passkeys from iCloud Keychain still work through “Sign in in the browser”.",
+      "fr": "Clés d’accès avec Touch ID sur Mac : dans la fenêtre de l’app, vous créez une clé d’accès avec Touch ID et vous vous connectez sans passer par le navigateur. Elles ne valent que dans l’app sur ce Mac ; les clés du trousseau iCloud passent toujours par « Se connecter dans le navigateur ».",
+      "zh": "Mac 上使用触控 ID 的通行密钥：现在可在应用窗口中用触控 ID 创建通行密钥并用它登录，无需通过浏览器。这些通行密钥仅在此 Mac 上的应用中有效；iCloud 钥匙串中的通行密钥仍可通过“在浏览器中登录”使用。"
+    }
+  ]
+}
