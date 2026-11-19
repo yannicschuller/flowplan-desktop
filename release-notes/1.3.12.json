@@ -1,0 +1,24 @@
+{
+  "features": [
+    {
+      "de": "Passkeys im iCloud-Schlüsselbund: „Passkey hinzufügen“ öffnet auf dem Mac einen einmaligen Link im Browser, und der Passkey landet im Schlüsselbund – nutzbar auch in Safari und auf dem iPhone. „Nur in dieser App (Touch ID)“ bleibt wählbar. Braucht Flowplan 0.10.2.",
+      "en": "Passkeys in iCloud Keychain: on the Mac, “Add a passkey” opens a one-time link in the browser and the passkey goes to the keychain – usable in Safari and on the iPhone too. “Only in this app (Touch ID)” stays available. Needs Flowplan 0.10.2.",
+      "fr": "Clés d’accès dans le trousseau iCloud : sur Mac, « Ajouter une clé d’accès » ouvre un lien unique dans le navigateur et la clé va dans le trousseau – utilisable aussi dans Safari et sur l’iPhone. « Seulement dans cette app (Touch ID) » reste possible. Nécessite Flowplan 0.10.2.",
+      "zh": "iCloud 钥匙串中的通行密钥：在 Mac 上，“添加通行密钥”会在浏览器中打开一次性链接，通行密钥会存入钥匙串，也可在 Safari 和 iPhone 上使用。“仅在此应用中（触控 ID）”仍可选择。需要 Flowplan 0.10.2。"
+    }
+  ],
+  "fixes": [
+    {
+      "de": "Antwortet statt Flowplan eine Fehlerseite (z. B. vom Reverse Proxy), führt die App zurück zur Startseite oder zur Seite „Keine Verbindung“ mit „Erneut versuchen“ und „Profile“.",
+      "en": "If an error page answers instead of Flowplan (e.g. from a reverse proxy), the app leads back to the start page or to the “No connection” page with “Try again” and “Profiles”.",
+      "fr": "Si une page d’erreur répond à la place de Flowplan (par exemple celle du proxy inverse), l’app revient à la page d’accueil ou à la page « Pas de connexion » avec « Réessayer » et « Profils ».",
+      "zh": "如果代替 Flowplan 响应的是错误页面（例如来自反向代理），应用会回到首页或“无连接”页面，并提供“重试”和“配置文件”。"
+    },
+    {
+      "de": "Das Adressfeld beim Einrichten zeigt die volle Adresse mit https:// als Beispiel.",
+      "en": "The address field in the setup shows a full address with https:// as an example.",
+      "fr": "Le champ d’adresse de la configuration montre une adresse complète avec https:// comme exemple.",
+      "zh": "设置中的地址栏以带 https:// 的完整地址作为示例。"
+    }
+  ]
+}
