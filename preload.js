@@ -19,7 +19,8 @@
 //   sign-in form gets this computer's key for the instance (deviceKey,
 //   device-key.js), so a password sign-in lasts as long as the app's, and
 //   learns whether passkeys sign in right here (Windows) or in the browser
-//   (passkeys, sign-in.js), and on macOS opens "Passkey hinzufügen" in the
+//   (passkeys, sign-in.js) and on which system (os: on a Mac the Keychain
+//   through the browser comes first), and on macOS opens "Passkey hinzufügen" in the
 //   default browser (addPasskeyInBrowser, the iCloud Keychain); "Im Marketplace veröffentlichen …" opens the
 //   marketplace in a window of the app (armMarketplaceWindow,
 //   marketplace-window.js); meeting notes learn whether this computer can
@@ -128,6 +129,12 @@ else if (instance && (location.protocol === "https:" || location.protocol === "h
     // Where passkeys sign in (#165, sign-in.js): "window" – the page's own
     // WebAuthn, Windows Hello over the app – or "browser" (the hand-off).
     passkeys: argument("flowplan-passkeys") === "window" ? "window" : "browser",
+    // The operating system ("darwin", "win32", "linux"): on a Mac the
+    // instance's sign-in page makes the browser hand-off – the iCloud
+    // Keychain – the passkey sign-in, and offers Touch ID in the window
+    // ("window" above) only as the second way: the app's own authenticator
+    // never sees the Keychain's passkeys.
+    os: process.platform,
     notifications: {
       enabled: () => ipcRenderer.invoke("flowplan:notifications-enabled"),
       setEnabled: (on) => ipcRenderer.invoke("flowplan:notifications-set-enabled", on === true),

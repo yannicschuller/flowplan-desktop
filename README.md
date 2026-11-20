@@ -218,7 +218,7 @@ For development on a Mac, `swift build -c release` in `native/device-ai` makes t
 
 **On Windows, passkeys sign in right in the app window.** Chromium hands WebAuthn to Windows' own API there, so **Mit Passkey anmelden** / **Sign in with a passkey** opens the native Windows Hello prompt (face, fingerprint, PIN, a security key or a phone) over the app – for the instance's own origin, as in a browser. The app says so to the instance's pages (`window.FlowplanDesktop.passkeys = "window"`, [`preload.js`](preload.js)); if Chromium itself asks which of several passkeys to use, the app shows a small dialog. Is the prompt cancelled or does it fail, the sign-in page offers **Im Browser anmelden** / **Sign in in the browser** – the browser hand-off below. Adding a passkey in the settings also works in the window. This needs a Flowplan server newer than 0.8.13; older servers keep handing passkeys to the browser. `FLOWPLAN_PASSKEYS=window` or `browser` picks the way on any system (used by [`test/passkeys.mjs`](test/passkeys.mjs)).
 
-On a Mac, a release built with a provisioning profile can keep passkeys of its own in the window with Touch ID – see [Passkeys with Touch ID on macOS](#passkeys-with-touch-id-on-macos); until then the Mac works like Linux below.
+**On a Mac, signing in with a passkey uses the Keychain through the browser.** **Mit Passkey anmelden** / **Sign in with a passkey** opens the default browser (the hand-off below) – that is where the passkeys of your iCloud Keychain and password managers are, the same ones Safari, Chrome and the iPhone use; the button says so (**öffnet deinen Browser – für Passkeys aus dem Schlüsselbund** / **opens your browser – for passkeys from the Keychain**). A release built with a provisioning profile can also keep passkeys of its own in the window with Touch ID – see [Passkeys with Touch ID on macOS](#passkeys-with-touch-id-on-macos); the sign-in page then offers them as a second way, **Mit Touch ID dieser App** / **With this app's Touch ID**, and if the window's passkey is not known to the instance (**Dieser Passkey ist hier nicht bekannt.**), the error links to the browser right away (**Passkey aus dem Schlüsselbund? Im Browser anmelden**). The page tells the Mac by `window.FlowplanDesktop.os` (`"darwin"`, `"win32"` or `"linux"`, [`preload.js`](preload.js)) and, for older apps without it, by the user agent. This needs a Flowplan server newer than 0.10.1.
 
 On macOS and Linux, passkeys (iCloud Keychain, password managers) and – on every system – identity providers that ask for one only work in a real browser. In the app, **Mit Passkey anmelden** and **Mit SSO anmelden** therefore open the sign-in in the default browser:
 
@@ -249,7 +249,7 @@ The bridge method exists on macOS only (`FLOWPLAN_PASSKEY_LINK=1` or `0` decides
 
 ### Passkeys with Touch ID on macOS
 
-Prepared, and **off until the maintainer adds a provisioning profile** (#356). Electron 45 has a platform authenticator of its own on the Mac (`app.configureWebAuthn({ touchID })`): passkeys created in the app window live in the Mac's keychain, bound to its Secure Enclave, and are unlocked with Touch ID – the window then signs in with passkeys the way it does on Windows (`window.FlowplanDesktop.passkeys = "window"`, the instance's own passkey button, **Im Browser anmelden** / **Sign in in the browser** when the prompt is cancelled or fails).
+Prepared, and **off until the maintainer adds a provisioning profile** (#356). Electron 45 has a platform authenticator of its own on the Mac (`app.configureWebAuthn({ touchID })`): passkeys created in the app window live in the Mac's keychain, bound to its Secure Enclave, and are unlocked with Touch ID – the window can then sign in with those passkeys (`window.FlowplanDesktop.passkeys = "window"`). Unlike on Windows this is the **second** way on the sign-in page: **Mit Passkey anmelden** stays the browser hand-off (the iCloud Keychain, which this authenticator never sees – macOS still names the app in its prompt, “Flowplan” wants to use your passkey for *host*, but offers only the app's own passkeys), and **Mit Touch ID dieser App** / **With this app's Touch ID** below it uses the window's passkey; an unknown passkey links to **Im Browser anmelden** in the error.
 
 What these passkeys are:
 
@@ -277,10 +277,12 @@ How it switches on – nothing changes before all of this holds:
 
 - [ ] The app launches from the DMG and after an update from the previous version (no “cannot be opened” – that would be a profile/entitlement mismatch); `spctl -a -vv /Applications/Flowplan.app` says `accepted, source=Notarized Developer ID`.
 - [ ] `codesign -d --entitlements - /Applications/Flowplan.app` lists `keychain-access-groups` `V7N2K54KJN.app.flowplan.desktop.webauthn`; `Contents/embedded.provisionprofile` exists.
-- [ ] The sign-in page shows the instance's own **Mit Passkey anmelden** button, not the hand-off link (`window.FlowplanDesktop.passkeys` is `"window"` in the developer tools).
+- [ ] The sign-in page shows **Mit Passkey anmelden** (opens the browser, “für Passkeys aus dem Schlüsselbund”) and below it **Mit Touch ID dieser App** (`window.FlowplanDesktop.passkeys` is `"window"`, `window.FlowplanDesktop.os` is `"darwin"` in the developer tools).
+- [ ] **Mit Passkey anmelden** → the browser → an iCloud Keychain passkey → signed in to the app.
 - [ ] Settings → add a passkey: the Touch ID prompt says “Flowplan” is trying to use your passkey for *host* (German system: … deinen Passkey für *host* zu verwenden); the passkey appears in the instance's list.
-- [ ] Sign out, **Mit Passkey anmelden** → Touch ID → signed in; nothing opened in the browser.
-- [ ] Cancel the Touch ID prompt → error and **Im Browser anmelden**, which opens the browser hand-off and signs in.
+- [ ] Sign out, **Mit Touch ID dieser App** → Touch ID → signed in; nothing opened in the browser.
+- [ ] Cancel the Touch ID prompt → error; **Mit Passkey anmelden** (the browser) is still there.
+- [ ] A Touch ID passkey whose entry was removed in the instance → **Dieser Passkey ist hier nicht bekannt.** with **Passkey aus dem Schlüsselbund? Im Browser anmelden**, which opens the browser hand-off and signs in.
 - [ ] Two accounts with passkeys on the same instance: the app asks which one (dialog).
 - [ ] A second profile (another instance) does not see the first profile's passkeys.
 - [ ] Quit and relaunch: the passkey still works. Sign in with e-mail and password and with SSO still works.

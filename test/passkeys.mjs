@@ -104,7 +104,9 @@ const chooseAccount = (app, origin, accounts) =>
   assert.equal(await main.evaluate(() => window.FlowplanDesktop.passkeys), "window", "the bridge says passkeys sign in here");
   assert.equal(await main.evaluate(() => window.isSecureContext && typeof PublicKeyCredential), "function", "the page has WebAuthn");
   assert.equal(await main.locator("#passkey").count(), 1, "the page's own passkey button");
-  assert.equal(await main.locator("#passkey-link").count(), 0, "no hand-off link");
+  // On a Mac the hand-off (the Keychain) stays the first way next to it.
+  assert.equal(await main.locator("#passkey-link").count(), process.platform === "darwin" ? 1 : 0, "the hand-off link on a Mac only");
+  assert.equal(await main.evaluate(() => window.FlowplanDesktop.os), process.platform);
 
   // A platform authenticator with user verification – what Windows Hello is to the page.
   const cdp = await main.context().newCDPSession(main);

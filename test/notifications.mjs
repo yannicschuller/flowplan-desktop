@@ -221,8 +221,9 @@ const menuChecked = (app, id) => app.evaluate(({ Menu }, id) => Menu.getApplicat
   assert.match(await window.evaluate(() => window.FlowplanDesktop.version), /^\d+\.\d+\.\d+/);
   assert.equal(await window.evaluate(() => window.FlowplanDesktop.notifications.enabled()), true);
   assert.equal(await window.evaluate(() => typeof window.flowplanDesktop), "undefined");
-  assert.deepEqual(await window.evaluate(() => Object.keys(window.FlowplanDesktop).sort()), ["armMarketplaceWindow", "armSystemAudio", "clearCache", "deviceKey", "history", "marketplaceWindow", "notifications", "openWindow", "passkeys", "platform", "spelling", "systemAudio", "version"]);
+  assert.deepEqual(await window.evaluate(() => Object.keys(window.FlowplanDesktop).sort()), ["armMarketplaceWindow", "armSystemAudio", "clearCache", "deviceKey", "history", "marketplaceWindow", "notifications", "openWindow", "os", "passkeys", "platform", "spelling", "systemAudio", "version"]);
   assert.equal(await window.evaluate(() => window.FlowplanDesktop.passkeys), process.platform === "win32" ? "window" : "browser", "passkeys in the browser except on Windows");
+  assert.equal(await window.evaluate(() => window.FlowplanDesktop.os), process.platform, "the system, for the sign-in page");
   console.log("✔ Kleine Brücke nur auf der Instanz");
 
   // Signed out: the instance answers 401 and nothing is shown.

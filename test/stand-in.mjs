@@ -87,7 +87,9 @@ const page = (origin) => `<!doctype html>
 // where the desktop app says passkeys sign in in its window, the page's own
 // button runs WebAuthn (navigator.credentials.get), and when that fails or
 // is cancelled "Im Browser anmelden" links to /api/auth/desktop; everywhere
-// else in the app "Mit Passkey anmelden" is that link. The settings' "Add a
+// else in the app "Mit Passkey anmelden" is that link – on a Mac also where
+// Touch ID runs in the window, which then is the second way ("Mit Touch ID
+// dieser App"): the iCloud Keychain is only reachable in the browser. The settings' "Add a
 // passkey" (navigator.credentials.create) is a button as well.
 const loginPage = () => `<!doctype html>
 <html><head><meta charset="utf-8"><title>Sign in</title></head>
@@ -109,6 +111,9 @@ const loginPage = () => `<!doctype html>
   const buttons = document.getElementById("buttons");
   window.signedIn = null;
   if (navigator.userAgent.includes("FlowplanDesktop/") && !inWindow) buttons.innerHTML = desktopLink("passkey-link", "Mit Passkey anmelden");
+  // On a Mac the Keychain (the browser) comes first, the app's Touch ID second.
+  else if (inWindow && window.FlowplanDesktop?.os === "darwin")
+    buttons.innerHTML = desktopLink("passkey-link", "Mit Passkey anmelden") + '<button id="passkey">Mit Touch ID dieser App</button>';
   else buttons.innerHTML = '<button id="passkey">Mit Passkey anmelden</button>';
   document.getElementById("passkey")?.addEventListener("click", async () => {
     document.getElementById("error").textContent = "";
