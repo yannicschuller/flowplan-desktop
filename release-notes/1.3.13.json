@@ -1,10 +1,10 @@
 {
   "features": [
     {
-      "de": "Offline-Kopie dauerhaft gespeichert: Die App erlaubt deiner Instanz dauerhaften Speicher, damit Chromium die Offline-Kopie nicht löscht, wenn die Festplatte voll wird. Zusammen mit Flowplan 0.11.1: 2 GB Offline-Budget als Standard (einstellbar bis 10 GB) und „Offline behalten“ für Bereiche und Seiten.",
-      "en": "Offline copy stored permanently: the app grants your instance persistent storage, so Chromium does not clear the offline copy when the disk fills up. Together with Flowplan 0.11.1: a 2 GB offline budget by default (up to 10 GB) and “Keep offline” for spaces and pages.",
-      "fr": "Copie hors ligne conservée durablement : l’app accorde à votre instance un stockage persistant, pour que Chromium n’efface pas la copie hors ligne quand le disque se remplit. Avec Flowplan 0.11.1 : un budget hors ligne de 2 Go par défaut (jusqu’à 10 Go) et « Garder hors ligne » pour les espaces et les pages.",
-      "zh": "离线副本永久保存：应用为你的实例授予持久存储权限，磁盘空间不足时 Chromium 不会清除离线副本。配合 Flowplan 0.11.1：默认 2 GB 离线存储额度（最多 10 GB），并可对空间和页面设置“保持离线”。"
+      "de": "Offline-Kopie dauerhaft gespeichert: Chromium löscht sie nicht mehr, wenn die Festplatte voll wird. Mit Flowplan 0.11.1 zusätzlich: 2 GB Offline-Budget als Standard (bis 10 GB) und „Offline behalten“ für Bereiche und Seiten.",
+      "en": "Offline copy stored permanently: Chromium no longer clears it when the disk fills up. With Flowplan 0.11.1 also: a 2 GB offline budget by default (up to 10 GB) and “Keep offline” for spaces and pages.",
+      "fr": "Copie hors ligne conservée durablement : Chromium ne l’efface plus quand le disque se remplit. Avec Flowplan 0.11.1 aussi : un budget hors ligne de 2 Go par défaut (jusqu’à 10 Go) et « Garder hors ligne » pour les espaces et les pages.",
+      "zh": "离线副本永久保存：磁盘空间不足时 Chromium 不再清除它。配合 Flowplan 0.11.1：默认 2 GB 离线存储额度（最多 10 GB），并可对空间和页面设置“保持离线”。"
     }
   ],
   "fixes": [
