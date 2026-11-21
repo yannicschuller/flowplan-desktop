@@ -1,0 +1,18 @@
+{
+  "features": [
+    {
+      "de": "Offline-Kopie dauerhaft gespeichert: Die App erlaubt deiner Instanz dauerhaften Speicher, damit Chromium die Offline-Kopie nicht löscht, wenn die Festplatte voll wird. Zusammen mit Flowplan 0.11.1: 2 GB Offline-Budget als Standard (einstellbar bis 10 GB) und „Offline behalten“ für Bereiche und Seiten.",
+      "en": "Offline copy stored permanently: the app grants your instance persistent storage, so Chromium does not clear the offline copy when the disk fills up. Together with Flowplan 0.11.1: a 2 GB offline budget by default (up to 10 GB) and “Keep offline” for spaces and pages.",
+      "fr": "Copie hors ligne conservée durablement : l’app accorde à votre instance un stockage persistant, pour que Chromium n’efface pas la copie hors ligne quand le disque se remplit. Avec Flowplan 0.11.1 : un budget hors ligne de 2 Go par défaut (jusqu’à 10 Go) et « Garder hors ligne » pour les espaces et les pages.",
+      "zh": "离线副本永久保存：应用为你的实例授予持久存储权限，磁盘空间不足时 Chromium 不会清除离线副本。配合 Flowplan 0.11.1：默认 2 GB 离线存储额度（最多 10 GB），并可对空间和页面设置“保持离线”。"
+    }
+  ],
+  "fixes": [
+    {
+      "de": "Mac: Die Anmeldeseite erkennt die Mac-App und meldet sich standardmäßig mit dem Passkey aus dem iCloud-Schlüsselbund über den Browser an.",
+      "en": "Mac: the sign-in page recognises the Mac app and signs in with the passkey from iCloud Keychain through the browser by default.",
+      "fr": "Mac : la page de connexion reconnaît l’app Mac et se connecte par défaut avec la clé d’accès du trousseau iCloud via le navigateur.",
+      "zh": "Mac：登录页面可识别 Mac 应用，默认通过浏览器使用 iCloud 钥匙串中的通行密钥登录。"
+    }
+  ]
+}
