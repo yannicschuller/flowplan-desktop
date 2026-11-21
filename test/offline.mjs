@@ -113,6 +113,14 @@ writeFileSync(join(dir, "config.json"), JSON.stringify({ server: origin }));
     caches: "caches" in window,
   }));
   assert.deepEqual(support, { secure: true, serviceWorker: true, caches: true });
+  // Persistent storage for the instance (#417): Chromium keeps the copy
+  // when the disk runs low.
+  const durable = await window.evaluate(async () => ({
+    persist: await navigator.storage.persist(),
+    persisted: await navigator.storage.persisted(),
+    state: (await navigator.permissions.query({ name: "persistent-storage" })).state,
+  }));
+  assert.deepEqual(durable, { persist: true, persisted: true, state: "granted" });
   // The instance's pages have no bridge to the app (preload.js).
   assert.equal(await window.evaluate(() => typeof window.flowplanDesktop), "undefined");
   await window.evaluate(async () => {

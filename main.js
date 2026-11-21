@@ -43,7 +43,7 @@ const updates = require("./updates");
 const { setupBrowserSignIn, passkeyWay, passkeyLinkOffered, chooseWebAuthnAccount, enableTouchId } = require("./sign-in");
 const { fallbackFor, errorPageFallback } = require("./fallback");
 const strings = require("./strings");
-const { isOwnPage, isInstancePage, allowedInWindow, isSignInRedirect, permissionAllowed, classifyHealth, defaultPagesDir, sameOrigin: sameOriginAs, instancePageUrl, opensOwnWindow, externalUrl, dictionaryWord, fromWindow, passkeyLinkUrl } = require("./guards");
+const { isOwnPage, isInstancePage, allowedInWindow, isSignInRedirect, permissionAllowed, permissionCheckAllowed, classifyHealth, defaultPagesDir, sameOrigin: sameOriginAs, instancePageUrl, opensOwnWindow, externalUrl, dictionaryWord, fromWindow, passkeyLinkUrl } = require("./guards");
 const profiles = require("./profiles");
 const { setupNotifier } = require("./notifier");
 const notificationRules = require("./notifications");
@@ -442,9 +442,10 @@ function prepareSession(ses) {
   prepared.add(ses);
   preparedSessions.add(ses);
   ses.setSpellCheckerLanguages?.(settings().spellLanguages);
-  // The instance gets notifications, clipboard, fullscreen and the
-  // microphone alone (voice notes, meeting notes) – no camera, no screen –
-  // and only the instance of the active profile that owns this session.
+  // The instance gets notifications, clipboard, fullscreen, persistent
+  // storage for its offline copy (#417) and the microphone alone (voice
+  // notes, meeting notes) – no camera, no screen – and only the instance of
+  // the active profile that owns this session.
   // The screen only for the one getDisplayMedia() of a main frame whose
   // window armed system audio (#199, system-audio.js).
   ses.setPermissionRequestHandler((wc, permission, done, details) => {
@@ -453,6 +454,14 @@ function prepareSession(ses) {
     const systemAudioArmed =
       permission === "display-capture" && fromInstance && details?.isMainFrame === true && isInstancePage(details?.requestingUrl, owner.server) && systemAudio.arming.isArmed(wc.id);
     done(permissionAllowed(permission, details, fromInstance, { systemAudioArmed }));
+  });
+  // Checks: persistent storage only for the active profile's own instance
+  // (the requesting origin, and the window's page when there is one).
+  ses.setPermissionCheckHandler((wc, permission, requestingOrigin) => {
+    const owner = ownerOf(ses);
+    const fromInstance =
+      !!owner && owner.id === state.activeProfile && sameOriginAs(requestingOrigin, owner.server) && (!wc || sameOriginAs(wc.getURL(), owner.server));
+    return permissionCheckAllowed(permission, fromInstance);
   });
   ses.setDisplayMediaRequestHandler((request, callback) => answerDisplayMedia(ses, request, callback));
   // Passkeys in the window (Windows, Touch ID on macOS, sign-in.js): when

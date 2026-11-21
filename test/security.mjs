@@ -13,7 +13,7 @@ const guards = require("../guards.js");
 const profiles = require("../profiles.js");
 const strings = require("../strings.js");
 const notifications = require("../notifications.js");
-const { isOwnPage, isInstancePage, allowedInWindow, isSignInRedirect, permissionAllowed, updateFeedUrl, classifyHealth } = guards;
+const { isOwnPage, isInstancePage, allowedInWindow, isSignInRedirect, permissionAllowed, permissionCheckAllowed, updateFeedUrl, classifyHealth } = guards;
 
 const pagesDir = join(root, "pages");
 const page = (name) => pathToFileURL(join(pagesDir, name)).href;
@@ -344,6 +344,17 @@ const server = "https://flowplan.example.com";
   assert.equal(permissionAllowed("geolocation", {}, from), false);
   assert.equal(permissionAllowed("media", { mediaTypes: ["audio"] }, false), false, "only the instance");
   assert.equal(permissionAllowed("notifications", {}, false), false);
+  // Persistent storage for the offline copy (#417): asked and checked only
+  // for the active profile's own instance; other checks keep Electron's answer.
+  assert.equal(permissionAllowed("persistent-storage", {}, from), true);
+  assert.equal(permissionAllowed("persistent-storage", {}, false), false, "not for other sites");
+  assert.equal(permissionCheckAllowed("persistent-storage", true), true);
+  assert.equal(permissionCheckAllowed("persistent-storage", false), false, "the check refuses other sites too");
+  assert.equal(permissionCheckAllowed("persistent-storage", undefined), false);
+  assert.equal(permissionCheckAllowed("notifications", false), true, "other checks unchanged; their requests decide");
+  const mainSource = readFileSync(join(root, "main.js"), "utf8");
+  assert.match(mainSource, /ses\.setPermissionCheckHandler\(\(wc, permission, requestingOrigin\) =>/);
+  assert.match(mainSource, /owner\.id === state\.activeProfile && sameOriginAs\(requestingOrigin, owner\.server\)/);
   console.log("✔ Berechtigungen");
 }
 

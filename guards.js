@@ -58,12 +58,14 @@ function allowedInWindow(url, { server, pagesDir, identityHosts = new Set() }) {
 function isSignInRedirect(url, server) {
   return sameOrigin(url, server) && /\/api\/auth\//.test(url);
 }
-// Permissions for the instance: notifications, clipboard, fullscreen and the
+// Permissions for the instance: notifications, clipboard, fullscreen,
+// persistent storage (#417: navigator.storage.persist() for the offline
+// copy, so Chromium does not clear it when the disk runs low) and the
 // microphone alone (voice notes, meeting notes) – never the camera. The
 // screen ("display-capture", getDisplayMedia) only for a window the page
 // armed for system audio a moment before (#199, system-audio.js) – that one
 // request, answered by main.js with the system's audio; otherwise never.
-const PLAIN_PERMISSIONS = ["notifications", "clipboard-read", "clipboard-sanitized-write", "fullscreen"];
+const PLAIN_PERMISSIONS = ["notifications", "clipboard-read", "clipboard-sanitized-write", "fullscreen", "persistent-storage"];
 function permissionAllowed(permission, details, fromInstance, { systemAudioArmed = false } = {}) {
   if (!fromInstance) return false;
   if (PLAIN_PERMISSIONS.includes(permission)) return true;
@@ -73,6 +75,15 @@ function permissionAllowed(permission, details, fromInstance, { systemAudioArmed
     return Array.isArray(types) && types.length === 1 && types[0] === "audio";
   }
   return false;
+}
+// Permission checks of the main sessions (navigator.permissions.query and
+// Chromium's own check before a request): persistent storage only for the
+// active profile's own instance, like its request. Every other check keeps
+// the answer Electron gives without a check handler (true) – their requests
+// still go through permissionAllowed.
+function permissionCheckAllowed(permission, fromInstance) {
+  if (permission === "persistent-storage") return fromInstance === true;
+  return true;
 }
 // The capture window's own session: the microphone alone (a voice note),
 // only for the capture page itself – nothing else, never a camera or screen.
@@ -205,6 +216,7 @@ module.exports = {
   allowedInWindow,
   isSignInRedirect,
   permissionAllowed,
+  permissionCheckAllowed,
   capturePermissionAllowed,
   fromWindow,
   updateFeedUrl,
