@@ -988,3 +988,59 @@ body.hint {
 .action-status.incomplete {
   color: var(--danger);
 }
+/* The picture between two profiles (switch.html, switch-cover.js). */
+body.switch {
+  background: transparent;
+  -webkit-app-region: no-drag;
+  overflow: hidden;
+}
+.switch-cover {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  background: var(--bg);
+  text-align: center;
+  transition: opacity 220ms ease-out;
+}
+.switch-cover img {
+  width: 56px;
+  height: 56px;
+}
+.switch-cover strong {
+  font-size: 20px;
+  font-weight: 600;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.switch-text {
+  color: var(--muted);
+  font-size: 13px;
+}
+body.switch.in .switch-cover {
+  animation: switch-in 200ms ease-out both;
+}
+body.switch.out .switch-cover {
+  animation: none;
+  opacity: 0;
+}
+@keyframes switch-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.switch .switch-cover {
+    animation: none;
+    transition: none;
+  }
+}

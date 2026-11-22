@@ -798,8 +798,9 @@ const chipTexts = (capture) => capture.evaluate(() => [...document.querySelector
   const text = await until(() => app.evaluate(({ webContents }, id) => webContents.fromId(id).executeJavaScript("document.getElementById('title').textContent"), toast), "toast text");
   assert.equal(text, state.view.title);
   assert.equal(await seen(app, "dialogs"), dialogs, "no dialog");
-  // Its button hides it.
-  await app.evaluate(({ webContents }, id) => webContents.fromId(id).executeJavaScript("document.querySelector('[data-action=ok]').click()"), toast);
+  // Its button hides it (clicked after the answer: hiding closes the
+  // toast's page, which would otherwise end the call unanswered).
+  await app.evaluate(({ webContents }, id) => webContents.fromId(id).executeJavaScript("setTimeout(() => document.querySelector('[data-action=ok]').click()); true"), toast);
   await until(async () => (await app.evaluate(() => globalThis.seen.updates.at(-1))).view === null, "hidden");
   console.log("✔ Update-Hinweis statt Dialog");
 }

@@ -406,6 +406,7 @@
   "profiles.removeDetail": "L'application se déconnecte de {0} et supprime ce que ce profil a enregistré sur cet ordinateur (connexion, copie hors ligne). Vos données restent sur le serveur.",
   "profiles.tooMany": "{0} profils au maximum.",
   "profiles.openProfile": "Ouvrir Flowplan avec le profil « {0} »",
+  "profiles.switching": "Ouverture du profil…",
   "offline.title": "Pas de connexion",
   "offline.heading": "Pas de connexion à Flowplan",
   "offline.text": "Le serveur est inaccessible pour le moment. Vérifiez votre connexion Internet ou l'adresse de l'instance.",

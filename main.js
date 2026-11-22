@@ -60,6 +60,8 @@ const { setupScreenCapture } = require("./screen-capture");
 const { setupTray } = require("./tray");
 const deepLinks = require("./deep-links");
 const pageWindowRules = require("./page-windows");
+const windowRules = require("./window-state");
+const { attachCover, MAX_WAIT: COVER_MAX_WAIT } = require("./switch-cover");
 const fileRules = require("./files");
 const autostart = require("./autostart");
 const printing = require("./print");
@@ -827,19 +829,62 @@ function wireHistory(w) {
     else if (command === "browser-forward") historyCommand(w, "forward");
   });
 }
-function saveWindowState(w) {
-  if (!w || w.isDestroyed()) return;
-  const maximized = w.isMaximized();
-  writeConfig({
-    window: maximized ? { ...(readConfig().window || {}), maximized } : { ...w.getBounds(), maximized },
-  });
+// The main window's size and place (window-state.js, flowplan#428): its
+// normal frame, seen on every resize and move while it is neither
+// minimised, maximised nor full screen – what is saved, whatever state the
+// window is in when it closes.
+const lastNormalBounds = new WeakMap(); // BrowserWindow → bounds
+function watchNormalBounds(w) {
+  let timer = null;
+  const seen = () => {
+    if (w.isDestroyed() || !w.isVisible() || !w.isNormal()) return;
+    const bounds = w.getBounds();
+    if (windowRules.usable(bounds)) lastNormalBounds.set(w, bounds);
+  };
+  // A moment later: macOS reports the frames of the animation into full
+  // screen while the window still counts as normal.
+  const later = () => {
+    clearTimeout(timer);
+    timer = setTimeout(seen, 400);
+  };
+  w.on("resize", later);
+  w.on("move", later);
+  w.on("show", later);
+  w.on("closed", () => clearTimeout(timer));
 }
-function createWindow(profile = activeProfile(), target, { hidden = false } = {}) {
+function saveWindowState(w) {
+  if (!w || w.isDestroyed()) return null;
+  const saved = windowRules.stateToSave(
+    {
+      bounds: w.getBounds(),
+      normal: w.getNormalBounds(),
+      last: lastNormalBounds.get(w),
+      maximized: w.isMaximized(),
+      fullScreen: w.isFullScreen(),
+      minimized: w.isMinimized(),
+    },
+    readConfig().window,
+  );
+  writeConfig({ window: saved });
+  return saved;
+}
+// The saved (or given) bounds, checked against the screens there are now.
+function boundsOnScreen(saved, options) {
+  try {
+    return windowRules.validBounds(saved, screen.getAllDisplays(), screen.getPrimaryDisplay(), options);
+  } catch {
+    return windowRules.validBounds(saved, [], undefined, options);
+  }
+}
+// `keep`: the state of the window this one replaces (another profile) –
+// its size, place and maximised; otherwise config.json's.
+function createWindow(profile = activeProfile(), target, { hidden = false, keep = null } = {}) {
   const profileId = profile ? profile.id : null;
-  const windowState = readConfig().window || {};
-  const w = makeWindow(profile, { bounds: windowState });
+  const windowState = keep || readConfig().window || {};
+  const w = makeWindow(profile, { bounds: boundsOnScreen(windowState) });
   win = w;
   winProfile = profileId;
+  watchNormalBounds(w);
   if (windowState.maximized) w.maximize();
   w.once("ready-to-show", () => {
     // Started hidden at login (Windows and Linux without a tray icon):
@@ -848,6 +893,8 @@ function createWindow(profile = activeProfile(), target, { hidden = false } = {}
       w.showInactive();
       w.minimize();
     } else w.show();
+    // Full screen at the last start (a profile switch takes it over itself).
+    if (!hidden && !keep && windowState.fullScreen === true) w.setFullScreen(true);
     // Windows: the dot on the taskbar button belongs to the window.
     if (win === w) notifier?.applyBadge(true);
     if (win === w) updates.refresh();
@@ -865,13 +912,32 @@ function createWindow(profile = activeProfile(), target, { hidden = false } = {}
 // old one goes once the new one shows (no blank screen in between). Pages in
 // windows of their own belong to their profile: they close (and are
 // remembered) and the new profile's come back.
+// Between the two: the target's name on the app's background, faded in over
+// the old window and out of the new one (switch-cover.js).
 function replaceWindow(profile, target) {
   const old = win && !win.isDestroyed() ? win : null;
-  if (old) saveWindowState(old);
+  const keep = old ? saveWindowState(old) : null;
   signIn.reset();
   closePageWindows((id) => id !== (profile ? profile.id : null));
-  const next = createWindow(profile, target);
+  const cover = {
+    name: profile ? profile.name : "Flowplan",
+    text: t("profiles.switching"),
+    lang: strings.locale(),
+    dark: nativeTheme.shouldUseDarkColors,
+  };
+  if (old && old.isVisible() && !old.isMinimized()) {
+    try {
+      attachCover(old, { ...cover, phase: "in" });
+      app.emit("flowplan-switch-cover", { phase: "in", name: cover.name, text: cover.text });
+    } catch {}
+  }
+  const next = createWindow(profile, target, { keep });
   if (!old) return next;
+  let incoming = null;
+  try {
+    incoming = attachCover(next, { ...cover, phase: "cover" });
+    app.emit("flowplan-switch-cover", { phase: "cover", name: cover.name, text: cover.text });
+  } catch {}
   let gone = false;
   const close = () => {
     if (gone || old.isDestroyed()) return;
@@ -879,8 +945,18 @@ function replaceWindow(profile, target) {
     if (old.isFullScreen()) next.setFullScreen(true);
     old.destroy();
   };
-  next.once("ready-to-show", close);
-  setTimeout(close, 4000);
+  // The cover goes once the instance has drawn (or a moment later at most).
+  const reveal = () => incoming?.out();
+  next.once("ready-to-show", () => {
+    close();
+    if (next.isDestroyed() || !next.webContents.isLoading()) return reveal();
+    next.webContents.once("did-stop-loading", reveal);
+    setTimeout(reveal, COVER_MAX_WAIT);
+  });
+  setTimeout(() => {
+    close();
+    reveal();
+  }, 4000);
   return next;
 }
 function switchProfile(id) {
@@ -967,13 +1043,15 @@ function openPageWindow(profileId, url, bounds) {
   if (!target) return null;
   // A page cannot open windows without end.
   if ([...pageWindows.values()].filter((e) => e.profileId === profileId && !e.keep).length >= pageWindowRules.MAX_PAGE_WINDOWS) return null;
-  // Next to the window in front, a little offset.
-  let place = bounds;
+  // A remembered one where it was, if a screen still shows it (another
+  // screen's place otherwise); a new one next to the window in front, a
+  // little offset.
+  let place = bounds && Number.isInteger(bounds.x) && Number.isInteger(bounds.y) ? boundsOnScreen(bounds, { fallback: { width: 1100, height: 820 } }) : bounds;
   if (!place) {
     const from = frontWindow();
     if (from) {
       const b = from.getBounds();
-      place = { x: b.x + 32, y: b.y + 32, width: Math.min(b.width, 1100), height: Math.min(b.height, 820) };
+      place = boundsOnScreen({ x: b.x + 32, y: b.y + 32, width: Math.min(b.width, 1100), height: Math.min(b.height, 820) }, { fallback: { width: 1100, height: 820 } });
     }
   }
   const w = makeWindow(profile, { bounds: place || { width: 1100, height: 820 } });
