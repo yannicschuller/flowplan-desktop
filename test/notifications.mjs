@@ -8,7 +8,7 @@
 // exists on the instance alone and a restart shows nothing twice. No running
 // Flowplan is needed. Usage: node test/notifications.mjs (Linux: xvfb-run)
 import { _electron as electron } from "playwright";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:http";
@@ -208,7 +208,20 @@ const listen = (app) =>
   });
 const shown = (app) => app.evaluate(() => globalThis.shown.map(({ title, body, url, profile }) => ({ title, body, url, profile })));
 const badge = (app) => app.evaluate(() => globalThis.badge);
-const hide = (app) => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].hide());
+// Hides the window of the first profile's instance (so its notifications pop
+// up). After a launch the app shows the window itself once it is ready to
+// show – which can come after the page's title is there; hidden before that,
+// it would be shown again, in front, and popups for its profile are held
+// back. So the first time, wait until it is shown; later it may already be
+// hidden by an earlier step.
+const hiddenOnce = new WeakSet();
+async function hide(app) {
+  const visible = () => app.evaluate(({ BrowserWindow }, origin) => !!BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.webContents.getURL().startsWith(origin))?.isVisible(), a.origin);
+  if (!hiddenOnce.has(app)) await until(visible, "the window is shown before it is hidden");
+  hiddenOnce.add(app);
+  await app.evaluate(({ BrowserWindow }, origin) => BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.webContents.getURL().startsWith(origin)).hide(), a.origin);
+  assert.equal(await visible(), false, "the window is hidden");
+}
 const clickMenu = (app, id) => app.evaluate(({ Menu }, id) => Menu.getApplicationMenu().getMenuItemById(id).click(), id);
 const menuChecked = (app, id) => app.evaluate(({ Menu }, id) => Menu.getApplicationMenu().getMenuItemById(id).checked, id);
 
@@ -346,3 +359,4 @@ const menuChecked = (app, id) => app.evaluate(({ Menu }, id) => Menu.getApplicat
 }
 await a.stop();
 await b.stop();
+rmSync(dir, { recursive: true, force: true });
