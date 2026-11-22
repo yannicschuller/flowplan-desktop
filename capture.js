@@ -141,6 +141,9 @@ function setupCapture(deps) {
   // Per profile: the target list and when it was read.
   const targetCache = new Map();
   let draining = false;
+  // A wake (resume, unlock, "send now") while a send is running: done
+  // again right after it, so it is not lost to the running pass.
+  let wakeAgain = false;
   let wasOnline = true;
   let timer = null;
 
@@ -660,6 +663,10 @@ function setupCapture(deps) {
     } finally {
       draining = false;
     }
+    if (wakeAgain) {
+      wakeAgain = false;
+      wake();
+    }
   }
   function ensureTimer() {
     if (timer) return;
@@ -678,6 +685,8 @@ function setupCapture(deps) {
     }, Number(process.env.FLOWPLAN_CAPTURE_TICK) || 5_000);
   }
   function wake() {
+    // The running pass would overwrite the queue with what it started from.
+    if (draining) return void (wakeAgain = true);
     for (const [id, own] of data) if (own.queue.length) ((own.queue = queueRules.wakeUp(own.queue)), persist(id));
     void drainAll();
   }
