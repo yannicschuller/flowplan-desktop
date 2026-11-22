@@ -1,0 +1,10 @@
+{
+  "fixes": [
+    {
+      "de": "Windows: Updates installieren sich wieder von selbst. Frühere Versionen waren mit einem Zertifikat signiert, dem Windows nicht vertraut, und der Updater lehnte jedes Update ab. Wer so eine Version hat, installiert 1.3.14 einmal von Hand.",
+      "en": "Windows: updates install themselves again. Earlier builds were signed with a certificate Windows does not trust, so the updater refused every update. If you have such a version, install 1.3.14 once by hand.",
+      "fr": "Windows : les mises à jour s’installent de nouveau d’elles-mêmes. Des versions précédentes étaient signées avec un certificat auquel Windows ne fait pas confiance. Si vous avez une telle version, installez la 1.3.14 une fois à la main.",
+      "zh": "Windows：更新重新可以自动安装。此前的版本使用了 Windows 不信任的证书签名，导致更新程序拒绝所有更新。如果你使用的是此类版本，请手动安装一次 1.3.14。"
+    }
+  ]
+}

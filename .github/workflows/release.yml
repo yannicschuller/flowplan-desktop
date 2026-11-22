@@ -224,6 +224,12 @@ jobs:
             secret="SECRET_$name"
             if [ -n "${!secret}" ]; then export "$name=${!secret}"; fi
           done
+          # Windows signs only with a Windows certificate (WIN_CSC_LINK).
+          # electron-builder otherwise falls back to CSC_LINK – the macOS
+          # Developer ID certificate, which Windows does not trust: the
+          # updater then refused every update as "not signed by the
+          # application owner" (flowplan#379). No Windows certificate: unsigned.
+          if [ "$RUNNER_OS" = Windows ]; then unset CSC_LINK CSC_KEY_PASSWORD; fi
           # Without a certificate: build unsigned instead of searching for one.
           if [ -z "${CSC_LINK:-}" ] && [ -z "${WIN_CSC_LINK:-}" ]; then export CSC_IDENTITY_AUTO_DISCOVERY=false; fi
           # macOS: import the certificate into a keychain of our own instead of
@@ -304,6 +310,22 @@ jobs:
               node -e 'process.exit(require("./build/update.json").touchID === undefined ? 0 : 1)' || { echo "::error::build/update.json names Touch ID without a profile"; exit 1; }
             fi
           done
+      # A signed Windows installer must carry a signature Windows trusts –
+      # an untrusted one stops every installed copy from updating (#379).
+      - name: Windows signature is trusted or absent
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          foreach ($file in Get-ChildItem dist -Filter *.exe) {
+            $sig = Get-AuthenticodeSignature -LiteralPath $file.FullName
+            Write-Host "$($file.Name): $($sig.Status) $($sig.SignerCertificate.Subject)"
+            if ($sig.Status -ne 'Valid' -and $sig.Status -ne 'NotSigned') {
+              Write-Error "$($file.Name) is signed but Windows does not trust the signature ($($sig.Status))."
+              exit 1
+            }
+          }
+          $yml = Get-Content dist/win-unpacked/resources/app-update.yml -Raw -ErrorAction SilentlyContinue
+          if ($yml -match 'Developer ID Application') { Write-Error 'app-update.yml names a macOS certificate as publisher.'; exit 1 }
       - name: Attach to the release
         shell: bash
         env:
