@@ -523,7 +523,7 @@ const server = "https://flowplan.example.com";
   assert.equal(strings.t("setup.connect"), "Connect");
   assert.equal(strings.t("missing.key"), "missing.key");
   // The pages ask only for words that exist.
-  for (const name of ["setup.html", "offline.html", "sign-in.html", "profiles.html", "settings.html", "capture.html", "update.html", "region.html", "hint.html"]) {
+  for (const name of ["setup.html", "offline.html", "sign-in.html", "profiles.html", "settings.html", "capture.html", "update.html", "region.html", "hint.html", "switch.html"]) {
     const html = readFileSync(join(pagesDir, name), "utf8");
     for (const [, key] of html.matchAll(/data-i18n(?:-\w+)?="([^"]+)"/g)) assert.ok(strings.STRINGS[key], `${name}: ${key}`);
     assert.match(html, /script-src 'self'/, `${name}: CSP without inline scripts`);

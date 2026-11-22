@@ -19,6 +19,8 @@ const api = require("../instance-api.js");
 const deepLinks = require("../deep-links.js");
 const files = require("../files.js");
 const pageWindows = require("../page-windows.js");
+const windowRules = require("../window-state.js");
+const { coverQuery } = require("../switch-cover.js");
 const autostart = require("../autostart.js");
 const print = require("../print.js");
 const updates = require("../updates.js");
@@ -209,6 +211,61 @@ const server = "https://flowplan.example.com";
   assert.deepEqual(next, { a: [{ url: `${server}/#page=x`, bounds: { width: 800, height: 600 } }] }, "removed profiles fall away, odd places too");
   assert.deepEqual(pageWindows.withPageWindows(next, { profiles: [profile] }, "a", []), {}, "no windows, no entry");
   console.log("✔ Seitenfenster merken");
+}
+
+// The main window's size and place (window-state.js, flowplan#428): a
+// saved place no screen shows any more, a size saved while minimised or
+// anything broken opens centred on the main screen – never as a small
+// window in a corner.
+{
+  const { validBounds, stateToSave } = windowRules;
+  // A MacBook (menu bar 25 px, Dock below) and an external screen to its left.
+  const laptop = { bounds: { x: 0, y: 0, width: 1512, height: 982 }, workArea: { x: 0, y: 25, width: 1512, height: 890 } };
+  const external = { bounds: { x: -2560, y: -300, width: 2560, height: 1440 }, workArea: { x: -2560, y: -275, width: 2560, height: 1415 } };
+  const centred = { x: 96, y: 40, width: 1320, height: 860 };
+  // A normal saved window stays where it was.
+  assert.deepEqual(validBounds({ x: 100, y: 60, width: 1200, height: 800 }, [laptop], laptop), { x: 100, y: 60, width: 1200, height: 800 });
+  assert.deepEqual(validBounds({ x: -2000, y: 0, width: 1600, height: 1000 }, [laptop, external], laptop), { x: -2000, y: 0, width: 1600, height: 1000 }, "on the external screen");
+  // The external screen unplugged: centred on the laptop, its size kept where it fits.
+  assert.deepEqual(validBounds({ x: -2000, y: 0, width: 1600, height: 1000 }, [laptop], laptop), { x: 0, y: 25, width: 1512, height: 890 });
+  assert.deepEqual(validBounds({ x: -2000, y: 0, width: 1000, height: 700 }, [laptop], laptop), { x: 256, y: 120, width: 1000, height: 700 });
+  // Minimised on Windows (-32000, 160×28), a frame of zero, nothing, junk.
+  for (const bad of [{ x: -32000, y: -32000, width: 160, height: 28 }, { x: 0, y: 982, width: 0, height: 0 }, {}, null, undefined, "x", { x: 10, y: 10, width: 1.5e9, height: 800 }, { x: 10, y: 40, width: 200, height: 200 }])
+    assert.deepEqual(validBounds(bad, [laptop], laptop), centred, JSON.stringify(bad));
+  assert.deepEqual(validBounds({ x: "10", y: 10, width: 900, height: 700 }, [laptop], laptop), { x: 306, y: 120, width: 900, height: 700 }, "no usable place: the size centred");
+  // A size without a place: centred.
+  assert.deepEqual(validBounds({ width: 900, height: 600 }, [laptop], laptop), { x: 306, y: 170, width: 900, height: 600 });
+  // Only a corner on the screen (less than a title bar): centred.
+  assert.deepEqual(validBounds({ x: 1450, y: 870, width: 1000, height: 700 }, [laptop], laptop), { x: 256, y: 120, width: 1000, height: 700 });
+  // Mostly on the screen but over its edge or under the menu bar: moved onto it.
+  assert.deepEqual(validBounds({ x: 800, y: 0, width: 1000, height: 700 }, [laptop], laptop), { x: 512, y: 25, width: 1000, height: 700 });
+  // Larger than the screen: shrunk to its work area.
+  assert.deepEqual(validBounds({ x: 0, y: 25, width: 3000, height: 2000 }, [laptop, external], laptop), { x: 0, y: 25, width: 1512, height: 890 });
+  // No screens at all: just a checked size.
+  assert.deepEqual(validBounds({ x: 5, y: 5, width: 900, height: 700 }, []), { width: 900, height: 700 });
+  assert.deepEqual(validBounds(null, [laptop], laptop, { fallback: { width: 1100, height: 820 } }), { x: 206, y: 60, width: 1100, height: 820 }, "a page window's size");
+
+  // What is saved: the normal frame, never one of minimised or full screen.
+  const normal = { x: 100, y: 60, width: 1200, height: 800 };
+  assert.deepEqual(stateToSave({ bounds: normal, normal, last: normal }), { ...normal, maximized: false, fullScreen: false });
+  assert.deepEqual(stateToSave({ bounds: { x: -32000, y: -32000, width: 160, height: 28 }, normal: { x: 0, y: 0, width: 0, height: 0 }, last: normal, minimized: true }), { ...normal, maximized: false, fullScreen: false }, "minimised");
+  assert.deepEqual(stateToSave({ bounds: { x: 0, y: 0, width: 1512, height: 982 }, normal: { x: 0, y: 982, width: 0, height: 0 }, last: normal, fullScreen: true }), { ...normal, maximized: false, fullScreen: true }, "full screen");
+  assert.deepEqual(stateToSave({ bounds: { x: 0, y: 25, width: 1512, height: 890 }, normal, maximized: true }), { ...normal, maximized: true, fullScreen: false }, "maximised: the normal size it returns to");
+  assert.deepEqual(stateToSave({ bounds: { x: 0, y: 0, width: 0, height: 0 }, normal: { x: 0, y: 0, width: 0, height: 0 }, minimized: true }, normal), { ...normal, maximized: false, fullScreen: false }, "nothing usable: what was saved before");
+  assert.deepEqual(stateToSave({ minimized: true }, {}), { maximized: false, fullScreen: false }, "nothing at all: no size (the default at the next start)");
+  assert.deepEqual(stateToSave({ bounds: { x: 10.4, y: 20.6, width: 900.2, height: 700 } }), { x: 10, y: 21, width: 900, height: 700, maximized: false, fullScreen: false });
+  // A saved state opens where it was.
+  assert.deepEqual(validBounds(stateToSave({ bounds: normal }), [laptop], laptop), normal);
+
+  // The cover between two profiles (switch-cover.js) gets only its words.
+  assert.deepEqual(coverQuery({ name: "Arbeit", text: "Profil wird geöffnet …", phase: "in", lang: "de" }), { name: "Arbeit", text: "Profil wird geöffnet …", phase: "in", lang: "de" });
+  assert.equal(coverQuery({ name: "x".repeat(100), phase: "evil" }).name.length, 60);
+  assert.equal(coverQuery({ phase: "evil" }).phase, "cover");
+  // Packaged, like every module main.js requires (a missing one stops the app at start).
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  const mainSource = readFileSync(new URL("../main.js", import.meta.url), "utf8");
+  for (const [, name] of mainSource.matchAll(/require\("\.\/([\w-]+)"\)/g)) assert.ok(pkg.build.files.includes(`${name}.js`), `package.json build.files: ${name}.js`);
+  console.log("✔ Fenstergröße und -platz geprüft");
 }
 
 // Launch at login.

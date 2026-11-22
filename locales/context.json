@@ -406,6 +406,7 @@
   "profiles.removeDetail": "Profiles (main.js, pages/profiles.html)",
   "profiles.tooMany": "Profiles (main.js, pages/profiles.html)",
   "profiles.openProfile": "Profiles (main.js, pages/profiles.html)",
+  "profiles.switching": "Shown for a moment while the app switches to another profile, under the profile's name (pages/switch.html, switch-cover.js)",
   "offline.title": "Offline page (pages/offline.html)",
   "offline.heading": "Offline page (pages/offline.html)",
   "offline.text": "Offline page (pages/offline.html)",

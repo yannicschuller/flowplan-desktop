@@ -406,6 +406,7 @@
   "profiles.removeDetail": "应用会退出 {0} 的登录，并删除此账户在这台电脑上存储的内容（登录信息、离线副本）。你的数据仍保留在服务器上。",
   "profiles.tooMany": "最多 {0} 个账户。",
   "profiles.openProfile": "使用账户“{0}”打开 Flowplan",
+  "profiles.switching": "正在打开账户…",
   "offline.title": "无网络连接",
   "offline.heading": "无法连接到 Flowplan",
   "offline.text": "目前无法访问服务器。请检查你的互联网连接或实例地址。",

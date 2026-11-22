@@ -139,11 +139,31 @@ let second, third;
   // still signed in.
   const accelerator = await app.evaluate(({ Menu }) => Menu.getApplicationMenu().getMenuItemById("next-profile").accelerator);
   assert.equal(accelerator, "CmdOrCtrl+Shift+P");
+  // The switch keeps the window's size and place and shows the target's
+  // name in between (switch-cover.js, flowplan#428).
+  const placed = { x: 40, y: 50, width: 900, height: 700 };
+  await app.evaluate(({ app, BrowserWindow }, placed) => {
+    globalThis.covers = [];
+    app.on("flowplan-switch-cover", (cover) => globalThis.covers.push(cover));
+    BrowserWindow.getAllWindows()[0].setBounds(placed);
+  }, placed);
+  await sleep(600);
+  const before = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getBounds());
   await clickMenu(app, "next-profile");
   window = await windowWith(app, () => document.getElementById("cookie")?.textContent === "sid=A");
   await oneWindow(app);
   assert.equal(config().activeProfile, "main");
-  console.log("✔ Nächstes Profil per Menü");
+  const after = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getBounds());
+  assert.deepEqual(after, before, "the new profile's window is where the old one was");
+  assert.equal(config().window.width, before.width, "saved: the normal size");
+  const covers = () => app.evaluate(({ webContents }) => webContents.getAllWebContents().filter((c) => c.getURL().includes("switch.html")).length);
+  for (let i = 0; i < 25 && (await covers()); i++) await sleep(200);
+  assert.equal(await covers(), 0, "the cover is gone");
+  const shown = await app.evaluate(() => globalThis.covers);
+  assert.deepEqual(shown.map((c) => c.phase), ["in", "cover"], "faded in over the old window, out of the new one");
+  assert.match(shown[1].name, /^localhost:/, "the target profile's name");
+  assert.match(shown[1].text, /^(Profil wird geöffnet …|Opening profile…|Ouverture du profil…|正在打开账户…)$/);
+  console.log("✔ Nächstes Profil per Menü, am selben Platz, mit Übergang");
 
   // Manage profiles: all three, the active one marked; rename in place.
   await clickMenu(app, "manage-profiles");
@@ -175,10 +195,17 @@ let second, third;
 
 // --profile=<id> at start picks a saved profile.
 {
+  // Saved while minimised somewhere no screen is (flowplan#428): it opens
+  // centred on the main screen at the default size instead.
+  writeFileSync(join(dir, "config.json"), JSON.stringify({ ...config(), window: { x: -32000, y: -32000, width: 160, height: 28, maximized: false } }));
   const app = await launch(`--profile=${third.id}`);
   const window = await windowWith(app, () => document.title === "Instance A");
   assert.equal(await cookieIn(window), "none", "the second account's own session");
   assert.equal(config().activeProfile, third.id);
+  const { bounds, area } = await app.evaluate(({ BrowserWindow, screen }) => ({ bounds: BrowserWindow.getAllWindows()[0].getBounds(), area: screen.getPrimaryDisplay().workArea }));
+  assert.ok(bounds.width >= Math.min(1320, area.width) - 2 && bounds.height >= Math.min(860, area.height) - 40, `the default size: ${JSON.stringify(bounds)}`);
+  assert.ok(bounds.x >= area.x && bounds.x + bounds.width <= area.x + area.width + 1, `on the screen: ${JSON.stringify(bounds)} in ${JSON.stringify(area)}`);
+  console.log("✔ Fenster außerhalb aller Bildschirme öffnet mittig");
   await app.close();
   console.log("✔ --profile beim Start");
 }
