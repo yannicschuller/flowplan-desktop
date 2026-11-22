@@ -10,7 +10,7 @@
 // of shown. No running Flowplan is needed.
 // Usage: node test/app.mjs (Linux without a display: xvfb-run)
 import { _electron as electron } from "playwright";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createRequire } from "node:module";
@@ -31,10 +31,34 @@ async function until(test, what, timeout = 15000) {
   throw new Error(`timed out: ${what}`);
 }
 
+// Every folder of this run is its own and goes when it ends (passed or not).
+const temporary = [];
+const tempDir = (prefix) => {
+  const path = mkdtempSync(join(tmpdir(), prefix));
+  temporary.push(path);
+  return path;
+};
+process.on("exit", () => {
+  for (const path of temporary) rmSync(path, { recursive: true, force: true });
+});
+// A page as it is shown: its window on screen and a frame drawn (waitForFunction
+// polls with requestAnimationFrame, which a hidden window does not run). A
+// screenshot of a window that is not shown waits for a frame that never comes.
+async function shown(page, timeout = 15000) {
+  await page.waitForFunction(() => document.visibilityState === "visible" && document.readyState === "complete", null, { timeout });
+}
+async function shot(page, name, options = {}) {
+  await shown(page);
+  await page.screenshot({ path: join(shots, name), ...options });
+}
+// Waits for a condition in a page that may be hidden (the capture window puts
+// itself away): polled on a timer, not on frames a hidden window never draws.
+const waitIn = (page, test, arg, timeout = 15000) => page.waitForFunction(test, arg, { polling: 100, timeout });
+
 const instance = await standIn();
-const dir = mkdtempSync(join(tmpdir(), "flowplan-app-"));
+const dir = tempDir("flowplan-app-");
 // Screenshots of the capture window and the setup step (FLOWPLAN_SHOTS, or a temporary folder).
-const shots = process.env.FLOWPLAN_SHOTS || mkdtempSync(join(tmpdir(), "flowplan-shots-"));
+const shots = process.env.FLOWPLAN_SHOTS || tempDir("flowplan-shots-");
 mkdirSync(shots, { recursive: true });
 const xdg = join(dir, "xdg");
 const config = () => JSON.parse(readFileSync(join(dir, "config.json"), "utf8"));
@@ -49,7 +73,7 @@ const launch = () =>
     args: [...(packaged ? [] : ["."]), `--user-data-dir=${dir}`, "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"],
     cwd: new URL("..", import.meta.url).pathname,
     // A packaged app checks for updates: at a source that is not there.
-    env: { ...process.env, XDG_CONFIG_HOME: xdg, FLOWPLAN_NOTIFICATION_INTERVAL: "2", FLOWPLAN_CAPTURE_TICK: "500", FLOWPLAN_HINT_DELAY: "300", ...(packaged ? { FLOWPLAN_UPDATE_URL: `${instance.origin}/api/no-updates/` } : {}) },
+    env: { ...process.env, XDG_CONFIG_HOME: xdg, FLOWPLAN_NOTIFICATION_INTERVAL: "2", FLOWPLAN_CAPTURE_TICK: "500", FLOWPLAN_HINT_DELAY: "300", FLOWPLAN_TOAST_AUTOHIDE: "600000", ...(packaged ? { FLOWPLAN_UPDATE_URL: `${instance.origin}/api/no-updates/` } : {}) },
   });
 // Records native menus, dialogs and the app's events instead of showing them.
 async function record(app) {
@@ -104,9 +128,13 @@ const hintPage = () => windowWith(app, () => location.pathname.endsWith("hint.ht
 {
   const hint = await hintPage();
   assert.equal(await hint.textContent("#title"), "New: quick capture with Ctrl+Alt+Shift+F9");
-  await hint.screenshot({ path: join(shots, "hint.png") });
+  await shot(hint, "hint.png");
   assert.equal(config().onboarding.hintShown, true);
-  await hint.click("#close");
+  // × closes the hint's page while the click is still being reported: that
+  // close is the expected outcome, not an error (checked right below).
+  await hint.click("#close").catch((error) => {
+    if (!hint.isClosed() && !/closed|destroyed/i.test(error.message)) throw error;
+  });
   await until(() => config().onboarding.hintDismissed === true, "dismissed");
   await until(async () => !(await app.evaluate(({ webContents }) => webContents.getAllWebContents().some((c) => c.getURL().includes("hint.html")))), "gone");
   console.log("✔ Einmaliger Hinweis auf Schnell erfassen");
@@ -352,6 +380,15 @@ if (window.opener) window.opener.postMessage({ type: "flowplan-marketplace-ready
   // The page windows have the profile's session and the bridge.
   const pageWindow = await windowWith(app, () => location.hash.includes("page=") && !!window.FlowplanDesktop);
   assert.equal(await pageWindow.evaluate(() => fetch("/api/notifications").then((r) => r.ok)), true);
+  // Both on screen before going on: a page window takes the focus when it is
+  // shown (ready-to-show), which would put the capture window below away.
+  await until(
+    () => app.evaluate(({ BrowserWindow }, origin) => {
+      const pages = BrowserWindow.getAllWindows().filter((w) => w.webContents.getURL().startsWith(`${origin}/#page=`) || w.webContents.getURL().startsWith(`${origin}/share/`));
+      return pages.length === 2 && pages.every((w) => w.isVisible());
+    }, instance.origin),
+    "both page windows shown",
+  );
   console.log("✔ Seiten in eigenen Fenstern");
 }
 
@@ -365,6 +402,8 @@ const chipTexts = (capture) => capture.evaluate(() => [...document.querySelector
 {
   await clickMenu(app, "quick-capture");
   const capture = await captureWindow();
+  // Its page is there before the window is shown (after did-finish-load).
+  await until(captureVisible, "the capture window shown");
   await capture.waitForFunction(() => document.getElementById("target-name").textContent.includes("Work"));
   assert.match(await capture.textContent("#target-name"), /^Inbox · Eingang/, "the inbox by default");
   const props = await app.evaluate(({ BrowserWindow }) => {
@@ -382,7 +421,7 @@ const chipTexts = (capture) => capture.evaluate(() => [...document.querySelector
   const texts = await chipTexts(capture);
   assert.match(texts[0], /^Fällig: Tue, Oct 27, 0?3:00\sPM×$/, "the due date in the window's language");
   assert.deepEqual(texts.slice(1), ["Tags: Kunde×", "Zuständig: Anna Schmidt×", "Priorität: Hoch×"]);
-  await capture.screenshot({ path: join(shots, "capture-chips.png") });
+  await shot(capture, "capture-chips.png");
   // "Text verbessern" (#172): right after "Suggest", a preview with what
   // would be lost; "Use" focused; Esc and "Keep original" keep the text,
   // typing again drops the preview; nothing is saved by it.
@@ -401,7 +440,7 @@ const chipTexts = (capture) => capture.evaluate(() => [...document.querySelector
   assert.equal(asked.pageId, INBOX, "the target's page");
   assert.equal(asked.text, typed);
   assert.equal(asked.locale, "en");
-  await capture.screenshot({ path: join(shots, "capture-improve.png") });
+  await shot(capture, "capture-improve.png");
   await capture.keyboard.press("Escape");
   await capture.waitForSelector("#improved", { state: "hidden" });
   assert.equal(await captureVisible(), true, "Esc in the preview keeps the window");
@@ -449,7 +488,7 @@ const chipTexts = (capture) => capture.evaluate(() => [...document.querySelector
   assert.deepEqual(await capture.$$eval("#picker-list li", (lis) => lis.map((li) => li.dataset.id)).then((ids) => ids.length), 4, "the inbox, the other database, a page, a journal");
   assert.match(await capture.textContent("#picker-note"), /^2 page\(s\) in end-to-end encrypted spaces/, "why encrypted pages are missing");
   await capture.type("#picker-search", "proj");
-  await capture.screenshot({ path: join(shots, "capture-target-picker.png") });
+  await shot(capture, "capture-target-picker.png");
   await capture.press("#picker-search", "Enter");
   await capture.waitForSelector("#picker", { state: "hidden" });
   assert.match(await capture.textContent("#target-name"), /^Projekte/);
@@ -472,7 +511,7 @@ const chipTexts = (capture) => capture.evaluate(() => [...document.querySelector
   assert.equal(await capture.inputValue("#text"), "", "saved: the field is empty again");
   assert.equal(await capture.isVisible("#toast-undo"), true);
   assert.equal(await capture.isVisible("#toast-open"), true);
-  await capture.screenshot({ path: join(shots, "capture-undo-toast.png") });
+  await shot(capture, "capture-undo-toast.png");
   await capture.click("#toast-undo");
   await until(() => instance.state.undone.length === 1, "undone");
   assert.deepEqual(instance.state.undone[0], { kind: "record", pageId: PROJECTS, rowId: instance.state.saved[0].rowId });
@@ -508,9 +547,11 @@ const chipTexts = (capture) => capture.evaluate(() => [...document.querySelector
   assert.ok(instance.to("/api/embed")[0].query.url === "https://example.org/artikel", "fetched by the instance, not the app");
   await app.evaluate(({ clipboard }) => clipboard.writeText("Text aus der Zwischenablage"));
   await capture.click("#paste");
+  // The button reads the clipboard through the main process: wait for its answer.
+  await waitIn(capture, () => document.getElementById("text").value !== "");
   assert.equal(await capture.inputValue("#text"), "Text aus der Zwischenablage");
   // Files: "Anhängen …" with the same checks as files.js.
-  const files = mkdtempSync(join(tmpdir(), "flowplan-capture-files-"));
+  const files = tempDir("flowplan-capture-files-");
   writeFileSync(join(files, "Foto.png"), PNG);
   writeFileSync(join(files, "Notiz.md"), "# Notiz");
   writeFileSync(join(files, "Falsch.png"), "<svg onload=alert(1)>");
@@ -589,11 +630,17 @@ const chipTexts = (capture) => capture.evaluate(() => [...document.querySelector
   const capture = await captureWindow();
   await capture.fill("#text", "Offline notiert #kunde");
   await capture.press("#text", "Enter");
-  await capture.waitForFunction(() => document.querySelector("#toast.queued") && !document.getElementById("toast").hidden);
+  await waitIn(capture, () => document.querySelector("#toast.queued") && !document.getElementById("toast").hidden);
   assert.match(await capture.textContent("#toast-text"), /^No connection to localhost:\d+ – queued/);
   assert.equal(await capture.inputValue("#text"), "", "in the queue, not lost");
-  await capture.waitForFunction(() => document.getElementById("queue").textContent === "1 queued");
-  await capture.screenshot({ path: join(shots, "capture-queued.png") });
+  await waitIn(capture, () => document.getElementById("queue").textContent === "1 queued");
+  // Queued, the window puts itself away a moment later; opened again, it
+  // still says what waits (the screenshot needs it on screen).
+  await until(async () => !(await captureVisible()), "the window goes after queueing");
+  await clickMenu(app, "quick-capture");
+  await until(captureVisible, "the capture window again");
+  assert.equal(await capture.textContent("#queue"), "1 queued");
+  await shot(capture, "capture-queued.png");
   const queueFile = join(dir, "capture", "a1.json");
   assert.ok(existsSync(queueFile), "kept in the user data folder");
   const stored = JSON.parse(readFileSync(queueFile, "utf8"));
@@ -608,7 +655,7 @@ const chipTexts = (capture) => capture.evaluate(() => [...document.querySelector
   await app.evaluate(({ powerMonitor }) => powerMonitor.emit("resume"));
   await until(() => instance.to("/api/capture/save").filter((r) => r.headers["idempotency-key"] && JSON.stringify(instance.state.saved.at(-1)?.fields || {}).includes("Offline notiert")).length >= 1, "sent once the instance is back", 30000);
   await app.evaluate(({ powerMonitor }) => powerMonitor.emit("resume"));
-  await capture.waitForFunction(() => document.getElementById("queue").hidden, null, { timeout: 30000 });
+  await waitIn(capture, () => document.getElementById("queue").hidden, null, 30000);
   const attempts = instance.to("/api/capture/save").filter((r) => r.body.toString("utf8").includes("Offline notiert"));
   assert.ok(attempts.length >= 2, "retried after the lost answer");
   assert.equal(new Set(attempts.map((r) => r.headers["idempotency-key"])).size, 1, "with the same key");
@@ -661,7 +708,7 @@ const chipTexts = (capture) => capture.evaluate(() => [...document.querySelector
 
 // Files handed to the app: checked, confirmed, then into the inbox or as pages.
 {
-  const files = mkdtempSync(join(tmpdir(), "flowplan-files-"));
+  const files = tempDir("flowplan-files-");
   writeFileSync(join(files, "Notiz.md"), "# Notiz\n\nText");
   writeFileSync(join(files, "Foto.png"), PNG);
   writeFileSync(join(files, "Falsch.png"), "<svg onload=alert(1)>");
@@ -740,7 +787,7 @@ const chipTexts = (capture) => capture.evaluate(() => [...document.querySelector
   await until(() => config().settings.captureActions[0].shortcut === "Alt+Shift+F5", "its shortcut");
   assert.equal(await app.evaluate(({ globalShortcut }) => globalShortcut.isRegistered("Alt+Shift+F5")), true);
   await settings.waitForFunction(() => document.querySelector('.action-row[data-id="task"] .action-status').textContent === "Active");
-  await settings.screenshot({ path: join(shots, "settings-quick-actions.png"), fullPage: true });
+  await shot(settings, "settings-quick-actions.png", { fullPage: true });
   await settings.click('.action-row[data-id="task"] button:has-text("Try it")');
   const preset = await windowWith(app, () => location.pathname.endsWith("capture.html") && !document.getElementById("action").hidden);
   assert.equal(await preset.textContent("#action"), "Quick action: Task");
@@ -864,7 +911,7 @@ const chipTexts = (capture) => capture.evaluate(() => [...document.querySelector
   const capture = await captureWindow();
   await capture.fill("#text", "Offline notiert nach Neustart");
   await capture.press("#text", "Enter");
-  await capture.waitForFunction(() => document.getElementById("queue").textContent === "1 queued");
+  await waitIn(capture, () => document.getElementById("queue").textContent === "1 queued");
   console.log("✔ Ohne Verbindung bleibt nichts verloren");
 }
 await app.close();
@@ -936,26 +983,29 @@ async function checkSystemAudio(app, main) {
 // step – its switches are the settings, all skippable; no hint afterwards.
 {
   await instance.start();
-  const fresh = mkdtempSync(join(tmpdir(), "flowplan-setup-"));
+  const fresh = tempDir("flowplan-setup-");
   const freshConfig = () => JSON.parse(readFileSync(join(fresh, "config.json"), "utf8"));
   app = await electron.launch({
     executablePath,
     args: [...(packaged ? [] : ["."]), `--user-data-dir=${fresh}`],
     cwd: new URL("..", import.meta.url).pathname,
-    env: { ...process.env, XDG_CONFIG_HOME: join(fresh, "xdg"), FLOWPLAN_HINT_DELAY: "300", ...(packaged ? { FLOWPLAN_UPDATE_URL: `${instance.origin}/api/no-updates/` } : {}) },
+    env: { ...process.env, XDG_CONFIG_HOME: join(fresh, "xdg"), FLOWPLAN_HINT_DELAY: "300", FLOWPLAN_TOAST_AUTOHIDE: "600000", ...(packaged ? { FLOWPLAN_UPDATE_URL: `${instance.origin}/api/no-updates/` } : {}) },
   });
   await record(app);
   const setup = await windowWith(app, () => location.pathname.endsWith("setup.html") && !!document.getElementById("server") && !document.getElementById("connect").hidden);
   await setup.fill("#server", instance.origin);
   await setup.click("#submit");
-  const step = await windowWith(app, () => new URLSearchParams(location.search).get("step") === "desktop" && document.getElementById("shortcut").value !== "", 20000);
+  const step = await windowWith(app, () => new URLSearchParams(location.search).get("step") === "desktop" && document.getElementById("shortcut").value !== "", 20000).catch(async (e) => {
+    console.log(JSON.stringify({ urls: await urls(app), onboarding: freshConfig().onboarding, requests: instance.requests?.slice?.(-15)?.map?.((r) => r.path || r.url) }));
+    throw e;
+  });
   assert.equal(await step.textContent("h1:visible"), "How Flowplan should run on this computer");
   assert.equal(await step.isChecked("#capture"), true, "quick capture on by default");
   assert.equal(await step.inputValue("#shortcut"), process.platform === "darwin" ? "⌘⇧Space" : "Ctrl+Shift+Space");
   assert.equal(await step.isChecked("#tray"), process.platform === "darwin", "as the settings' default of this system");
   assert.equal(await step.isChecked("#launchAtLogin"), false);
   assert.equal(await step.isDisabled("#startHidden"), true, "only with launch at login");
-  await step.screenshot({ path: join(shots, "setup-step.png"), fullPage: true });
+  await shot(step, "setup-step.png", { fullPage: true });
   // A shortcut another app holds: reported, the previous one stays.
   await app.evaluate(({ globalShortcut }) => globalShortcut.register("Alt+Shift+F6", () => {}));
   await step.click("#record");

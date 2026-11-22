@@ -248,7 +248,9 @@ function render() {
   clearTimeout(hideTimer);
   if (content) {
     showToast(content);
-    if (content.autoHide) hideTimer = setTimeout(() => dispatch({ type: "dismiss" }), content.autoHide);
+    // FLOWPLAN_TOAST_AUTOHIDE=<ms> replaces the pause (tests on a busy
+    // machine, which click the toast's button themselves).
+    if (content.autoHide) hideTimer = setTimeout(() => dispatch({ type: "dismiss" }), Number(process.env.FLOWPLAN_TOAST_AUTOHIDE) || content.autoHide);
   } else detachToast();
   // The progress on the Dock icon or taskbar button.
   const progress = taskbarProgress(state);
