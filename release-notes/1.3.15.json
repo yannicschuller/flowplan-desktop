@@ -1,0 +1,18 @@
+{
+  "features": [
+    {
+      "de": "Profil wechseln mit einem kurzen Übergang: Das Fenster blendet sanft über und zeigt, welches Profil geöffnet wird (ohne Animation bei „Bewegung reduzieren“).",
+      "en": "Switching profiles with a short transition: the window fades smoothly and shows which profile is opening (no animation with reduced motion).",
+      "fr": "Changement de profil avec une courte transition : la fenêtre passe en fondu et indique le profil qui s’ouvre (sans animation si les mouvements sont réduits).",
+      "zh": "切换配置文件时有简短的过渡：窗口平滑淡入淡出，并显示正在打开的配置文件（启用“减少动态效果”时无动画）。"
+    }
+  ],
+  "fixes": [
+    {
+      "de": "Das Fenster öffnet wieder in seiner letzten Größe und Position – nicht mehr klein in einer Ecke, auch nach dem Abziehen eines Monitors, nach Vollbild oder beim Profilwechsel.",
+      "en": "The window opens at its last size and position again – no longer small in a corner, also after unplugging a monitor, after full screen or when switching profiles.",
+      "fr": "La fenêtre s’ouvre de nouveau à sa dernière taille et position – plus en petit dans un coin, même après avoir débranché un écran, après le plein écran ou en changeant de profil.",
+      "zh": "窗口重新以上次的大小和位置打开——不再缩小在角落里，包括拔掉显示器、退出全屏或切换配置文件之后。"
+    }
+  ]
+}
