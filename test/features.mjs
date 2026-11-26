@@ -57,6 +57,9 @@ const server = "https://flowplan.example.com";
   assert.equal(settings.settingsOf({ settings: { deviceAi: "no" } }).deviceAi, true, "only a boolean switches");
   assert.equal(settings.applyPatch({}, { deviceAi: false }).deviceAi, false);
   assert.deepEqual(settings.settingsOf({ settings: { spellLanguages: [] } }).spellLanguages, ["de-DE", "en-US", "fr-FR"], "never without a language");
+  // Polish, European Portuguese and Russian can be chosen; not on by default.
+  assert.deepEqual(settings.settingsOf({ settings: { spellLanguages: ["ru", "pt-PT", "pl", "pt-BR"] } }).spellLanguages, ["pl", "pt-PT", "ru"]);
+  assert.deepEqual(settings.SPELL_LANGUAGES, ["de-DE", "en-US", "fr-FR", "pl", "pt-PT", "ru"]);
   for (const ok of ["CommandOrControl+Shift+Space", "Alt+Shift+K", "Control+Alt+F12", "Super+Plus", "Ctrl+Shift+1"]) assert.equal(settings.isShortcut(ok), true, ok);
   for (const bad of ["Space", "K", "Shift+K", "Ctrl+", "Ctrl+Ctrl+K", "Hyper+K", "Ctrl+Shift+Space+K", "", null, "Ctrl+" + "K".repeat(80)]) assert.equal(settings.isShortcut(bad), false, String(bad));
   const patched = settings.applyPatch({ settings: { launchAtLogin: true, startHidden: true } }, { launchAtLogin: false, tray: true, evil: 1 }, "linux");
@@ -78,7 +81,7 @@ const server = "https://flowplan.example.com";
   assert.deepEqual(ids(items).slice(7), ["-", "cut", "copy", "paste", "paste-plain", "select-all", "-", "spelling-languages"]);
   assert.equal(items.find((i) => i.id === "paste-plain").role, "pasteAndMatchStyle");
   const languages = items.find((i) => i.id === "spelling-languages").submenu;
-  assert.deepEqual(languages.map((l) => [l.value, l.checked]), [["de-DE", true], ["en-US", true], ["fr-FR", false]]);
+  assert.deepEqual(languages.map((l) => [l.value, l.checked]), [["de-DE", true], ["en-US", true], ["fr-FR", false], ["pl", false], ["pt-PT", false], ["ru", false]]);
   items = contextMenuItems({ isEditable: true, misspelledWord: "zzzq", dictionarySuggestions: [] }, { ...opts, spellLanguages: ["fr-FR"] });
   assert.equal(items[0].id, "spelling-none");
   assert.equal(items[0].enabled, false);

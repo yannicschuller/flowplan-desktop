@@ -389,7 +389,7 @@ const server = "https://flowplan.example.com";
   const info = pkg.build.mac.extendInfo;
   assert.match(info.NSMicrophoneUsageDescription, /meeting notes/);
   assert.match(info.NSAudioCaptureUsageDescription, /meeting notes/, "macOS 14.2+: the CoreAudio tap needs it");
-  for (const lang of ["de", "en", "fr", "zh_CN"]) {
+  for (const lang of ["de", "en", "fr", "pl", "pt_PT", "ru", "zh_CN"]) {
     const text = readFileSync(join(root, "build", "mac-locales", `${lang}.lproj`, "InfoPlist.strings"), "utf8");
     for (const key of ["NSMicrophoneUsageDescription", "NSAudioCaptureUsageDescription"]) assert.match(text, new RegExp(`^"${key}" = "[^"]+";$`, "m"), `${lang}: ${key}`);
   }
@@ -436,17 +436,22 @@ const server = "https://flowplan.example.com";
   console.log("✔ Antworten des Servers unterschieden");
 }
 
-// E9: words in four languages, English otherwise.
+// E9: words in seven languages, English otherwise.
 {
   assert.equal(strings.pickLocale("de-CH"), "de");
   assert.equal(strings.pickLocale("fr_CA"), "fr");
   assert.equal(strings.pickLocale("en-US"), "en");
   assert.equal(strings.pickLocale("it-IT"), "en");
+  assert.equal(strings.pickLocale("pl-PL"), "pl");
+  assert.equal(strings.pickLocale("ru_RU"), "ru");
+  // European Portuguese, also for Brazilian Portuguese.
+  for (const value of ["pt", "pt-PT", "pt_BR"]) assert.equal(strings.pickLocale(value), "pt", value);
+  assert.equal(strings.tagOf("pt"), "pt-PT");
   assert.equal(strings.pickLocale(undefined), "en");
   // Simplified Chinese; Traditional Chinese gets English.
   for (const value of ["zh", "zh-CN", "zh_CN", "zh-Hans", "zh-Hans-CN", "zh-SG", "zh-Hans-HK"]) assert.equal(strings.pickLocale(value), "zh", value);
   for (const value of ["zh-TW", "zh_HK", "zh-MO", "zh-Hant", "zh-Hant-TW"]) assert.equal(strings.pickLocale(value), "en", value);
-  assert.deepEqual(strings.LOCALES, ["de", "en", "fr", "zh"]);
+  assert.deepEqual(strings.LOCALES, ["de", "en", "fr", "pl", "pt", "ru", "zh"]);
   // The catalogues (locales/*.json, edited by translate.flowplan.org): flat
   // { "area.key": "text" }, written as JSON.stringify(…, null, 2) + "\n".
   const localesDir = join(root, "locales");
@@ -466,9 +471,9 @@ const server = "https://flowplan.example.com";
   // keys in the same order, none empty.
   assert.deepEqual(Object.keys(catalogues.de), enKeys, "de.json and en.json: the same keys in the same order");
   for (const lang of ["de", "en"]) for (const key of enKeys) assert.ok(catalogues[lang][key].trim(), `${lang}.json: ${key} is not empty`);
-  // French and Chinese: no key that English does not have, and in English's
+  // The other languages: no key that English does not have, and in English's
   // order; a missing or empty text falls back to English.
-  for (const lang of ["fr", "zh"]) {
+  for (const lang of ["fr", "pl", "pt", "ru", "zh"]) {
     const keys = Object.keys(catalogues[lang]);
     for (const key of keys) assert.ok(Object.hasOwn(catalogues.en, key), `${lang}.json: ${key} is not in en.json`);
     assert.deepEqual(keys, enKeys.filter((key) => Object.hasOwn(catalogues[lang], key)), `${lang}.json: in the order of en.json`);
@@ -484,6 +489,15 @@ const server = "https://flowplan.example.com";
     for (const [key, text] of Object.entries(catalogues[lang])) if (text) assert.equal(placeholders(text), placeholders(catalogues.en[key]), `${lang}.json: ${key} has the same placeholders as English`);
   // French says "vous", never "tu".
   for (const [key, text] of Object.entries(catalogues.fr)) assert.doesNotMatch(text, /(^|[\s'’«(-])(tu|toi|ton|ta|tes|te)(?=$|[\s,.!?:;»)])/iu, `fr.json: ${key} says "vous"`);
+  // Russian says "вы", Portuguese never "tu", Polish never "Pan"/"Pani" (as
+  // the web app's catalogues); Russian text is Cyrillic, except fixed values.
+  const fixed = ["signIn.codePlaceholder", "setup.placeholder", "capture.refused", "updates.ofSize", "updates.ok"];
+  for (const [key, text] of Object.entries(catalogues.ru)) {
+    assert.doesNotMatch(text, /(?<!\p{L})(?:ты|тебя|тебе|тобой|тво[йяеёи]\p{L}*)(?!\p{L})/iu, `ru.json: ${key} says "вы"`);
+    if (text && !fixed.includes(key)) assert.match(text, /\p{Script=Cyrillic}/u, `${key}: Russian`);
+  }
+  for (const [key, text] of Object.entries(catalogues.pt)) assert.doesNotMatch(text, /(?<!\p{L})(?:tu|te|ti|contigo|teu|tua|teus|tuas)(?!\p{L})/iu, `pt.json: ${key} never says "tu"`);
+  for (const [key, text] of Object.entries(catalogues.pl)) assert.doesNotMatch(text, /(?<!\p{L})(?:Pan|Pani|Państwo)(?!\p{L})/u, `pl.json: ${key} says "ty"`);
   // Chinese text is Chinese (not a copied English one), except a few fixed values.
   for (const [key, text] of Object.entries(catalogues.zh)) {
     if (!text || ["signIn.codePlaceholder", "setup.placeholder", "capture.refused", "updates.ofSize"].includes(key)) continue;
@@ -519,6 +533,14 @@ const server = "https://flowplan.example.com";
   // The instance's shorthand parser knows de, en and fr only.
   assert.equal(strings.serverLocale("zh"), "en");
   assert.equal(strings.serverLocale("fr"), "fr");
+  assert.equal(strings.serverLocale("pt"), "en");
+  strings.setLocale("pt-PT");
+  assert.equal(strings.t("menu.settings"), "Definições…");
+  assert.equal(strings.t("profiles.removeConfirm", "Trabalho"), "Remover o perfil “Trabalho”?");
+  strings.setLocale("ru");
+  assert.equal(strings.t("setup.connect"), "Подключиться");
+  strings.setLocale("pl");
+  assert.equal(strings.t("menu.checkUpdates"), "Sprawdź uaktualnienia…");
   strings.setLocale("xx");
   assert.equal(strings.t("setup.connect"), "Connect");
   assert.equal(strings.t("missing.key"), "missing.key");

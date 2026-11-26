@@ -1,5 +1,5 @@
-// The app's own words in German, English, French and Simplified Chinese,
-// chosen by the system language (app.getLocale(); English when the language is
+// The app's own words in German, English, French, Polish, European
+// Portuguese, Russian and Simplified Chinese, chosen by the system language (app.getLocale(); English when the language is
 // another one). The words live in locales/<language>.json (one flat
 // { "area.key": "text" } catalogue per language; German is written first,
 // English is what translations start from, translate.flowplan.org edits
@@ -14,17 +14,22 @@
       de: require("./locales/de.json"),
       en: require("./locales/en.json"),
       fr: require("./locales/fr.json"),
+      pl: require("./locales/pl.json"),
+      pt: require("./locales/pt.json"),
+      ru: require("./locales/ru.json"),
       zh: require("./locales/zh.json"),
     });
   else root.flowplanStrings = factory((root.flowplanDesktop && root.flowplanDesktop.strings) || {});
 })(typeof self !== "undefined" ? self : this, function (catalogues) {
-  const LOCALES = ["de", "en", "fr", "zh"];
+  const LOCALES = ["de", "en", "fr", "pl", "pt", "ru", "zh"];
   const FALLBACK = "en";
   // Chinese written in Traditional characters (Taiwan, Hong Kong, Macau) gets
   // English rather than Simplified characters it does not read as its own.
   const TRADITIONAL = ["hant", "tw", "hk", "mo"];
-  // "de-CH", "fr_CA", "en-US" → "de", "fr", "en"; "zh", "zh-CN", "zh-Hans",
-  // "zh-SG" → "zh"; "zh-TW", "zh-HK", "zh-Hant" and anything else → "en".
+  // "de-CH", "fr_CA", "en-US" → "de", "fr", "en"; "pt-PT", "pt-BR", "pt" →
+  // "pt" (European Portuguese, the only Portuguese there is); "zh", "zh-CN",
+  // "zh-Hans", "zh-SG" → "zh"; "zh-TW", "zh-HK", "zh-Hant" and anything else
+  // → "en".
   function pickLocale(value) {
     const [short, ...rest] = String(value || "")
       .toLowerCase()
@@ -33,12 +38,14 @@
     return LOCALES.includes(short) ? short : FALLBACK;
   }
   // The language tag for <html lang> and Intl: "zh-Hans" so Chromium picks
-  // Simplified Chinese glyphs and formats.
-  const tagOf = (locale) => (locale === "zh" ? "zh-Hans" : locale);
-  // The language the instance's shorthand parser knows (de, en, fr): Chinese
-  // shorthand is read the English way ("tomorrow 3pm", month/day like 3/15).
+  // Simplified Chinese glyphs and formats, "pt-PT" for European Portuguese
+  // formats ("pt" alone is Brazilian Portuguese).
+  const tagOf = (locale) => (locale === "zh" ? "zh-Hans" : locale === "pt" ? "pt-PT" : locale);
+  // The language the instance's shorthand parser knows (de, en, fr): Polish,
+  // Portuguese, Russian and Chinese shorthand is read the English way ("tomorrow 3pm", month/day like 3/15).
   const serverLocale = (locale) => (["de", "en", "fr"].includes(locale) ? locale : FALLBACK);
-  // The catalogues as one table, key → [de, en, fr, zh], in English's order.
+  // The catalogues as one table, key → [one text per LOCALES], in English's
+  // order.
   // A text that is missing or empty in a catalogue is "" here, and t() takes
   // the English one instead.
   const catalogue = (lang) => (catalogues && typeof catalogues[lang] === "object" && catalogues[lang]) || {};

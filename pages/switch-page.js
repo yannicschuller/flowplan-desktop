@@ -2,7 +2,7 @@
 // name on the app's background. Its words come in the address (the page has
 // no bridge); #out fades it away.
 const params = new URLSearchParams(location.search);
-document.documentElement.lang = params.get("lang") === "zh" ? "zh-Hans" : params.get("lang") || "en";
+document.documentElement.lang = params.get("lang") === "zh" ? "zh-Hans" : params.get("lang") === "pt" ? "pt-PT" : params.get("lang") || "en";
 document.getElementById("name").textContent = params.get("name") || "";
 document.getElementById("text").textContent = params.get("text") || "";
 document.title = params.get("text") || "Flowplan";

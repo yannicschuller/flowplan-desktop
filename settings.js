@@ -11,8 +11,12 @@
 // file or from the settings page is checked again: unknown keys fall away,
 // wrong types fall back to the default.
 
-// Spell checking: German, English and French, any of them (at least one).
-const SPELL_LANGUAGES = ["de-DE", "en-US", "fr-FR"];
+// Spell checking: German, English, French, Polish, European Portuguese and
+// Russian (Chromium's Hunspell dictionaries; macOS uses its own spell
+// checker), any of them (at least one); German, English and French unless
+// chosen otherwise.
+const SPELL_LANGUAGES = ["de-DE", "en-US", "fr-FR", "pl", "pt-PT", "ru"];
+const DEFAULT_SPELL_LANGUAGES = ["de-DE", "en-US", "fr-FR"];
 const DEFAULT_SHORTCUT = "CommandOrControl+Shift+Space";
 // "Neuigkeiten nach Updates": every release's notes, only breaking changes, none.
 const UPDATE_NOTES = ["all", "breaking", "never"];
@@ -47,7 +51,7 @@ function defaults(platform = process.platform) {
     launchAtLogin: false,
     startHidden: false,
     captureShortcut: DEFAULT_SHORTCUT,
-    spellLanguages: SPELL_LANGUAGES.slice(),
+    spellLanguages: DEFAULT_SPELL_LANGUAGES.slice(),
     // Apple Intelligence on this Mac (device-ai.js): optional, on by default
     // where the helper exists – it only starts when a page asks. Off, the
     // helper never runs and the instance has no window.FlowplanDesktop.ai.
@@ -124,4 +128,4 @@ function shortcutLabel(value, platform = process.platform) {
   return mac ? `${mods.join("")}${key}` : [...mods, key].join("+");
 }
 
-module.exports = { SPELL_LANGUAGES, DEFAULT_SHORTCUT, UPDATE_NOTES, isShortcut, defaults, settingsOf, applyPatch, shortcutLabel };
+module.exports = { SPELL_LANGUAGES, DEFAULT_SPELL_LANGUAGES, DEFAULT_SHORTCUT, UPDATE_NOTES, isShortcut, defaults, settingsOf, applyPatch, shortcutLabel };
